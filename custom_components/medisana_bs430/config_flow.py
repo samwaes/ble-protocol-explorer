@@ -6,11 +6,13 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_NAME
 
 from .const import CONF_ADDRESS, DOMAIN, MODEL
+from .bs430.protocol import NAME_PREFIX, SERVICE_UUID
 
 
 class MedisanaBS430ConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -20,6 +22,13 @@ class MedisanaBS430ConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._discovery_info: BluetoothServiceInfoBleak | None = None
+
+    @staticmethod
+    def _is_bs430(service_info: BluetoothServiceInfoBleak) -> bool:
+        """Return whether a discovery belongs to a BS430."""
+        name = (service_info.name or "").upper()
+        service_uuids = {uuid.lower() for uuid in service_info.service_uuids}
+        return name.startswith(NAME_PREFIX) or SERVICE_UUID in service_uuids
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -54,5 +63,27 @@ class MedisanaBS430ConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Direct users to Bluetooth discovery."""
-        return self.async_abort(reason="bluetooth_discovery_required")
+        """Find a recently discovered scale during manual setup."""
+        discoveries = [
+            info
+            for info in bluetooth.async_discovered_service_info(
+                self.hass, connectable=True
+            )
+            if self._is_bs430(info)
+        ]
+
+        if len(discoveries) == 1:
+            return await self.async_step_bluetooth(discoveries[0])
+
+        if len(discoveries) > 1:
+            # BS430 installations normally contain one scale. Prefer the
+            # strongest currently cached advertisement and still confirm it.
+            selected = max(discoveries, key=lambda info: info.rssi)
+            return await self.async_step_bluetooth(selected)
+
+        errors = {"base": "device_not_found"} if user_input is not None else {}
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({}),
+            errors=errors,
+        )
