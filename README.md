@@ -1,65 +1,103 @@
 # Medisana BS430 Local Integration
 
-A Hupla Labs project focused first on connecting a **Medisana BS430 smart scale** locally to Home Assistant over Bluetooth Low Energy.
-
-The broader BLE exploration toolkit remains a secondary goal. The project will only generalise after the BS430 works end to end.
-
-## Major finding
-
-The BS430 protocol does not need to be reverse engineered from scratch. The open-source **openScale** project has supported the BS430 since 2018 and contains an established implementation matching our observed service, characteristics and device-name prefix.
-
-The local Python reader in this repository independently reimplements those protocol facts. No openScale source code is copied; openScale is GPLv3 and is credited as the upstream protocol reference.
+A Hupla Labs project to connect a **Medisana BS430 smart scale** directly to Home Assistant over Bluetooth Low Energy, without VitaDock or a cloud service.
 
 ## Current status
 
-- automatic discovery of the scale after weighing
-- successful Windows BLE connection
-- service `0x78B2` confirmed
-- characteristics `0x8A20`, `0x8A21`, `0x8A22`, `0x8A81`, `0x8A82` confirmed
-- fixed status frame on `0x8A82` confirmed
-- BS430 request command identified
-- weight and body-composition packet layouts identified
-- source-backed Python reader added
-- direct measurement validation still required
+The core protocol has now been validated against a real synchronization session.
 
-## Primary target
+Confirmed:
+
+- automatic discovery after the scale wakes;
+- successful Windows BLE connection;
+- service `0x78B2` and characteristics `0x8A20`, `0x8A21`, `0x8A22`, `0x8A81`, `0x8A82`;
+- synchronization request through `0x8A81`;
+- several historical measurements returned in one connection;
+- weight and body-composition frames paired by a shared timestamp key;
+- measurement timestamps decoded as seconds since `2010-01-01`;
+- weight, fat, water, muscle and bone values validated;
+- probable impedance field identified;
+- probable profile byte identified: tested user is app profile `1`, and the candidate packet field is also `01`.
+
+The next phase is a reusable protocol package followed by a native Home Assistant integration.
+
+## Architecture target
 
 ```text
 Medisana BS430
       ↓ Bluetooth Low Energy
-Local BS430 reader and decoder
-      ↓ MQTT
-Home Assistant
+Reusable local protocol library
+      ↓
+History synchronizer and duplicate protection
+      ↓
+Native Home Assistant integration
 ```
 
-Development remains isolated from Home Assistant OS and the existing Zigbee configuration until the standalone reader is stable.
+## Important protocol behaviour
+
+The scale does not return only the latest weighing. A validated session returned several stored measurements, newest first. The reader therefore keeps listening until disconnect, timeout or inactivity and pairs `0x8A21` and `0x8A22` frames using their embedded timestamp.
+
+The synchronization command is:
+
+```text
+02 <current Unix timestamp as uint32 little-endian>
+```
+
+Captured measurement timestamps use a different epoch:
+
+```text
+2010-01-01T00:00:00Z + encoded seconds
+```
+
+See [docs/protocol-bs430.md](docs/protocol-bs430.md) for the complete current protocol specification.
+
+## Confirmed official-app configuration surface
+
+The official app exposes:
+
+- body-weight unit:
+  - Metric
+  - Imperial US
+  - Imperial UK
+- target weight;
+- numbered user profile;
+- tested user: profile `1`.
+
+These functions are included in the integration capability backlog. They will not become writable controls until their GATT commands and read-back behaviour are verified.
 
 ## Work sequence
 
 - [x] Confirm BLE advertisement and synchronization window
 - [x] Map proprietary service and characteristics
-- [x] Build isolated Windows scanner and logger
 - [x] Find an established open-source BS430 implementation
-- [x] Identify the `0x8A81` time/request command
-- [x] Identify the `0x8A21` weight frame layout
-- [x] Identify the `0x8A22` body-composition frame layout
-- [ ] Validate decoded values against a real weighing
-- [ ] Handle multiple users and duplicate measurements
-- [ ] Publish measurements over MQTT
-- [ ] Add Home Assistant MQTT discovery
-- [ ] Validate unattended operation
-- [ ] Generalise the explorer for additional BLE devices
+- [x] Identify synchronization command
+- [x] Decode and validate measurement values
+- [x] Confirm multi-record history synchronization
+- [x] Correct timestamp epoch and frame pairing
+- [x] Preserve profile candidate and unknown fields
+- [ ] Refactor protocol into reusable Python modules
+- [ ] Add fixture-based protocol tests
+- [ ] Scaffold native Home Assistant custom component
+- [ ] Add Bluetooth config flow and options flow
+- [ ] Add persistent duplicate prevention
+- [ ] Add sensors, history events, diagnostics and synchronize button
+- [ ] Investigate unit, target-weight and profile configuration commands
+- [ ] Package for HACS
 
-See [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for the delivery order and [docs/protocol-bs430.md](docs/protocol-bs430.md) for the protocol.
+See:
 
-## Next test on Windows
+- [PROJECT_SCOPE.md](PROJECT_SCOPE.md) for delivery phases;
+- [docs/protocol-bs430.md](docs/protocol-bs430.md) for protocol details;
+- [docs/home-assistant-integration-plan.md](docs/home-assistant-integration-plan.md) for the complete integration design.
+
+## Running the current validation reader
 
 Requirements:
 
-- Python 3.11 or 3.12
-- Windows Bluetooth enabled
-- VitaDock and nRF Connect disconnected
-- Bluetooth temporarily disabled on phones that may claim the scale
+- Python 3.11 or 3.12;
+- Windows Bluetooth enabled;
+- VitaDock and nRF Connect disconnected;
+- Bluetooth temporarily disabled on phones that may claim the scale.
 
 Create the environment once:
 
@@ -68,44 +106,22 @@ py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Then run:
+Run:
 
 ```powershell
 windows\RUN_BS430_READER.bat
 ```
 
-Wait for the scanner and complete a normal body-analysis weighing. The reader will:
+Wait for scanning, then complete a body-analysis weighing or wake the scale. Output is written under `captures/private` as CSV, LOG and JSON.
 
-1. connect to the BS430;
-2. enable the three indication channels;
-3. send `0x02 + current Unix timestamp little-endian` to `0x8A81`;
-4. decode weight from `0x8A21`;
-5. decode fat, water, muscle and bone values from `0x8A22`;
-6. save raw packets as CSV and the decoded measurement as JSON under `captures/private`.
-
-## Safety and stability
+## Safety and privacy
 
 The current development phase does not:
 
-- install code in Home Assistant OS
-- modify VirtualBox USB passthrough
-- use the Zigbee adapter
-- change ZHA
-- require a cloud service
+- install experimental code in Home Assistant OS;
+- modify VirtualBox USB passthrough;
+- use or change Zigbee/ZHA;
+- require a cloud service;
+- issue unverified profile, unit, target-weight, delete or reset commands.
 
-## Repository structure
-
-```text
-medisana_logger.py                 Original passive BS430 capture tool
-tools/medisana_protocol_explorer.py  Manual diagnostic explorer
-tools/medisana_bs430_reader.py       Source-backed BS430 reader and decoder
-windows/RUN_BS430_READER.bat         Windows validation runner
-docs/protocol-bs430.md               Established protocol and evidence
-PROJECT_SCOPE.md                      Medisana-first scope and phases
-captures/                             Sanitised examples only
-requirements.txt                      Python dependencies
-```
-
-## Project status
-
-Experimental local integration. Body-composition readings are personal health data and should not be used for medical decisions.
+Body-composition readings are personal health data and should not be used for medical decisions.
