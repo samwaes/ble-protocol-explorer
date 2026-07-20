@@ -1,0 +1,18 @@
+{
+  "domain": "medisana_bs430",
+  "name": "Medisana BS430",
+  "version": "0.1.0",
+  "documentation": "https://github.com/samwaes/ble-protocol-explorer",
+  "issue_tracker": "https://github.com/samwaes/ble-protocol-explorer/issues",
+  "config_flow": true,
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "bluetooth": [
+    {
+      "connectable": true,
+      "local_name": "0203B*",
+      "service_uuid": "000078b2-0000-1000-8000-00805f9b34fb"
+    }
+  ]
+}
