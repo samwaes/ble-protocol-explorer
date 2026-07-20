@@ -2,15 +2,18 @@
 
 ## Primary objective
 
-Connect a Medisana BS430 smart scale directly to Home Assistant without relying on the proprietary Medisana application or cloud.
+Connect a Medisana BS430 smart scale directly to Home Assistant over Bluetooth Low Energy without relying on VitaDock or a cloud service.
 
-The first usable release must:
+The first complete release must:
 
-1. Detect the BS430 when it wakes after a completed weighing.
-2. Connect during the short Bluetooth Low Energy availability window.
-3. Retrieve and decode the latest measurement.
-4. Publish the decoded measurement locally for Home Assistant.
-5. Avoid destabilising the existing Home Assistant and Zigbee setup during development.
+1. Discover the BS430 when it wakes.
+2. Connect during the short BLE availability window.
+3. Synchronize all available stored measurements.
+4. Pair and decode weight and body-composition frames reliably.
+5. prevent duplicate imports across repeated synchronizations.
+6. expose measurements, synchronization state and diagnostics in Home Assistant.
+7. provide a UI configuration and options flow.
+8. preserve a safe path for future scale-side configuration commands.
 
 ## Current verified facts
 
@@ -20,53 +23,81 @@ The first usable release must:
 - Proprietary service: `0x78B2`
 - Characteristics:
   - `0x8A20`: read
-  - `0x8A21`: indicate
-  - `0x8A22`: indicate
-  - `0x8A81`: write
-  - `0x8A82`: indicate
-- Confirmed read from `0x8A20`: `37 FB`
-- Confirmed indication from `0x8A82`:
-  - `84 53 01 80 01 2D B4 E0 00 00 00 00 00 00 00 00 00 00 00 00`
+  - `0x8A21`: weight/history indication
+  - `0x8A22`: body-composition indication
+  - `0x8A81`: synchronization write
+  - `0x8A82`: session/status indication
+- The scale streams several historical records in one synchronization.
+- Weight and feature frames share a timestamp key and must be paired by that key.
+- Captured measurement timestamps use a 2010 epoch.
+- The tested user is scale profile `1`.
+- Weight-frame byte `13` is a probable, but not yet independently confirmed, profile number.
+- The official application configures weight units, target weight and numbered profiles.
 
 ## Delivery order
 
-### Phase 1: BS430 protocol discovery
+### Phase 1: Protocol validation — complete
 
-- Reliable wake, scan, connect and capture loop
-- Record all GATT indications
-- Identify required writes to `0x8A81`
-- Document packet structure
-- Decode weight and available body-composition metrics
+- [x] Reliable wake, scan and connect loop
+- [x] Identify required write to `0x8A81`
+- [x] Decode weight and body-composition values
+- [x] Validate decoded measurements against real weighings
+- [x] Confirm multi-record historical synchronization
+- [x] Correct the measurement epoch
+- [x] Pair frames by shared timestamp
+- [x] Preserve unknown and profile-candidate fields
 
-### Phase 2: Home Assistant bridge
+### Phase 2: Reusable protocol library — current
 
-- Publish measurements over MQTT first
-- Add Home Assistant MQTT discovery
-- Validate reliability across repeated weighings
-- Keep the bridge separate from Home Assistant OS during initial testing
+- [x] Update standalone reader for multi-record synchronization
+- [ ] Split transport, protocol, decoder and models into importable modules
+- [ ] Add captured-session fixtures with personal values sanitised
+- [ ] Add unit tests for timestamps, pairing, metrics and duplicates
+- [ ] Define a stable measurement fingerprint
+- [ ] Define supported model/capability registry
 
-### Phase 3: Productisation
+### Phase 3: Native Home Assistant integration
 
-- Configurable device profiles
-- Windows and Linux support
-- Structured packet recordings
-- Automated tests using captured sessions
-- Installation and troubleshooting documentation
+- [ ] Bluetooth discovery config flow
+- [ ] Connection validation and unique device identity
+- [ ] Data update coordinator or event-driven synchronizer
+- [ ] Persistent seen-record fingerprint store
+- [ ] Sensor entities for confirmed measurements
+- [ ] Manual `Synchronize now` button
+- [ ] Options flow for history, diagnostics and profile mapping
+- [ ] Reconfigure and repair flows
+- [ ] Device and entity diagnostics
+- [ ] Home Assistant events for imported historical records
+- [ ] Tests using mocked BLE sessions
 
-### Phase 4: Broader BLE explorer
+### Phase 4: Scale-side configuration investigation
 
-Only after the BS430 path works end to end:
+Confirmed application functions to investigate:
 
-- Generic GATT explorer
-- Reusable command console
-- Packet comparison and diff tooling
-- Pluggable decoders for other BLE devices
-- Optional native Home Assistant integration
+- body-weight unit: Metric, Imperial US, Imperial UK
+- target weight
+- numbered user profile
+
+Rules:
+
+- expose no unverified production writes;
+- first capture or source each command;
+- classify every capability as confirmed, probable or unknown;
+- keep destructive functions such as delete/reset out of scope unless clearly documented and protected.
+
+### Phase 5: Packaging and productisation
+
+- HACS-compatible repository structure
+- installation and troubleshooting documentation
+- Windows and Linux validation
+- unattended synchronization validation
+- support matrix for related Medisana models
 
 ## Non-goals for the first release
 
-- A generic BLE reverse-engineering platform before BS430 decoding works
-- Installing experimental Python packages inside Home Assistant OS
-- Sharing the Zigbee USB adapter
-- Permanent BLE connections to the scale
-- Cloud dependency
+- guessing undocumented scale writes
+- automatic person assignment by weight alone
+- cloud dependency
+- permanent BLE connection
+- modifying Zigbee or ZHA
+- treating body-composition values as medical measurements
