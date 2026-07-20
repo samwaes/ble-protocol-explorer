@@ -3,7 +3,7 @@
 **Status:** Beta  
 **Integration version:** `0.4.0`  
 **Protocol version:** `1.0.0`  
-**Source revision:** `68120aa`  
+**Source revision:** `aa6ba4c`  
 **Released:** `2026-07-20`  
 **Current milestone:** Reliable automatic synchronization
 
