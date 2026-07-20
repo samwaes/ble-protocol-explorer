@@ -55,6 +55,11 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             "completion_reason": "waiting_for_scale",
         }
 
+    def _clear_advertisement_history(self) -> None:
+        """Allow the next identical wake advertisement to trigger a callback."""
+        bluetooth.async_clear_advertisement_history(self.hass, self.address)
+        _LOGGER.debug("Cleared BS430 advertisement history for the next wake cycle")
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Synchronize all currently stored records from the scale."""
         self.manual_trigger_count += 1
@@ -134,35 +139,45 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retry while the scale's approximately 30-second wake window is open."""
         last_error: Exception | None = None
 
-        # The scale can advertise before its GATT service is ready. Keep trying
-        # during most of the visible Bluetooth blinking window.
-        for attempt in range(1, 9):
-            try:
-                self.sync_state = "connecting"
-                ble_device = bluetooth.async_ble_device_from_address(
-                    self.hass, service_info.address, connectable=True
-                ) or service_info.device
-                await self._async_synchronize_device(
-                    ble_device, trigger="automatic"
-                )
-                _LOGGER.info(
-                    "Automatic BS430 synchronization succeeded on attempt %d", attempt
-                )
-                return
-            except UpdateFailed as err:
-                last_error = err
-                _LOGGER.warning(
-                    "Automatic BS430 synchronization attempt %d failed: %s",
-                    attempt,
-                    err,
-                )
-                if attempt < 8:
-                    await asyncio.sleep(2.5)
+        try:
+            # The scale can advertise before its GATT service is ready. Keep trying
+            # during most of the visible Bluetooth blinking window.
+            for attempt in range(1, 9):
+                try:
+                    self.sync_state = "connecting"
+                    ble_device = bluetooth.async_ble_device_from_address(
+                        self.hass, service_info.address, connectable=True
+                    ) or service_info.device
+                    await self._async_synchronize_device(
+                        ble_device, trigger="automatic"
+                    )
+                    _LOGGER.info(
+                        "Automatic BS430 synchronization succeeded on attempt %d",
+                        attempt,
+                    )
+                    return
+                except UpdateFailed as err:
+                    last_error = err
+                    _LOGGER.warning(
+                        "Automatic BS430 synchronization attempt %d failed: %s",
+                        attempt,
+                        err,
+                    )
+                    if attempt < 8:
+                        await asyncio.sleep(2.5)
 
-        self.sync_state = "waiting_for_scale"
-        if last_error:
-            _LOGGER.error("Automatic BS430 synchronization failed: %s", last_error)
+            self.sync_state = "waiting_for_scale"
+            if last_error:
+                _LOGGER.error("Automatic BS430 synchronization failed: %s", last_error)
+        finally:
+            # The scale reuses an identical wake advertisement on every weighing.
+            # Home Assistant deduplicates identical payloads, so clear the cache
+            # after the session to ensure the next power cycle is dispatched.
+            self._clear_advertisement_history()
 
     async def async_sync_now(self) -> None:
         """Run a user-requested synchronization."""
-        await self.async_request_refresh()
+        try:
+            await self.async_request_refresh()
+        finally:
+            self._clear_advertisement_history()
