@@ -11,8 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from medisana_bs430.bluetooth import synchronize
-
+from .bs430.bluetooth import synchronize
 from .const import CONF_ADDRESS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
