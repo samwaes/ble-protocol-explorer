@@ -1,0 +1,22 @@
+{
+  "title": "Medisana BS430",
+  "config": {
+    "step": {
+      "confirm": {
+        "title": "Add Medisana BS430",
+        "description": "Set up the discovered scale {name} at {address}.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "The name used for this scale in Home Assistant."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This scale is already configured.",
+      "bluetooth_discovery_required": "Wake the scale and wait for Home Assistant Bluetooth discovery.",
+      "no_discovery_info": "Bluetooth discovery information is no longer available."
+    }
+  }
+}
