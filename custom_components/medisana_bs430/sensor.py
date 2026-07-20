@@ -54,6 +54,14 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
         }
 
     @property
+    def available(self) -> bool:
+        """Keep a valid last measurement available while the scale is asleep."""
+        latest = self.coordinator.data.get("latest") if self.coordinator.data else None
+        if latest and self.entity_description.data_key in latest:
+            return latest.get(self.entity_description.data_key) is not None
+        return super().available
+
+    @property
     def native_value(self) -> Any:
         latest = self.coordinator.data.get("latest") if self.coordinator.data else None
         return latest.get(self.entity_description.data_key) if latest else None
