@@ -1,84 +1,76 @@
 # Controlled Home Assistant installation
 
+## Release identification
+
+- Integration version: `0.3.1`
+- Automatic-trigger code revision: `adea036481198c128973a7a7773fbdbc0d961f02`
+- HACS should show version `0.3.1` before installation.
+- Home Assistant device information shows `0.3.1 (adea036)` after restart.
+
 This integration is still experimental. Install it only for a controlled test and keep the existing Zigbee configuration unchanged.
 
-## Important BS430 behaviour
+## Critical BS430 wake behaviour
 
-The BS430 is normally asleep and is not continuously discoverable. Its Bluetooth connection window opens only after a **completed, validated weighing**. Wait until the scale has finished calculating the measurement and the Bluetooth symbol appears. Home Assistant then has only a short period to discover and connect to the scale.
+The BS430 is not continuously discoverable. Bluetooth becomes available only after a **fully completed and validated weighing**.
 
-Simply tapping the scale or standing on it briefly may not open a usable synchronization window. Complete the full weighing sequence.
+The correct sequence is:
 
-After the integration has been configured, no periodic polling is required. Home Assistant listens for the scale's Bluetooth advertisement and starts synchronization immediately whenever a completed weighing wakes the scale.
+1. Stand on the scale and remain still until the measurement is fully completed.
+2. Complete profile confirmation on the scale when requested.
+3. Wait until the Bluetooth symbol appears on the scale display.
+4. Home Assistant must discover and connect during this short Bluetooth window.
+
+Simply tapping or waking the scale without completing a validated measurement may not expose the synchronization service. VitaDock or another phone may claim the connection window before Home Assistant, so disable or disconnect competing Bluetooth clients during testing.
 
 ## Prerequisites
 
-- Home Assistant with a working connectable Bluetooth adapter or Bluetooth proxy
+- Home Assistant with a working Bluetooth adapter or Bluetooth proxy
 - Medisana BS430 within Bluetooth range
-- VitaDock and other phones disconnected while testing, so they do not claim the short connection window
+- VitaDock and other phones disconnected while testing
 - File access through HACS, Studio Code Server, Samba, SSH or another supported method
 
 ## Install
 
-1. Install or copy the complete folder:
-
-   ```text
-   custom_components/medisana_bs430
-   ```
-
-   into:
-
-   ```text
-   /config/custom_components/medisana_bs430
-   ```
-
-2. Confirm that this file exists:
-
-   ```text
-   /config/custom_components/medisana_bs430/manifest.json
-   ```
-
+1. Install or update **Medisana BS430** through HACS.
+2. Confirm HACS shows version `0.3.1`.
 3. Restart Home Assistant.
-
-4. Complete a full weighing. Wait until the final values and Bluetooth symbol are shown.
-
+4. Complete a full validated weighing and wait for the Bluetooth symbol.
 5. Immediately open **Settings → Devices & services → Add integration**.
+6. Search for **Medisana BS430** and confirm the discovered scale.
 
-6. Search for **Medisana BS430** and confirm the discovered scale while it is still awake.
+If discovery misses the window, close the setup dialog, complete another full weighing, and retry immediately.
 
-If discovery misses the window, close the setup dialog, complete another full weighing, and try again immediately.
+## Normal operation
 
-## Normal operation after setup
+After setup, no fixed polling interval is used. A validated weighing produces a Bluetooth advertisement. The integration listens for that advertisement and immediately starts synchronization.
 
-For each new measurement:
+Version `0.3.1` matches the BS430 by its stable local-name prefix and service UUID rather than relying only on the previously stored Bluetooth address. It retries up to three times within the short wake window.
 
-1. Complete a normal validated weighing.
-2. Wait for the Bluetooth symbol.
-3. Home Assistant detects the advertisement and connects automatically.
-4. The integration requests all stored records, updates its entities and disconnects naturally.
+The **Synchronize now** button remains available for diagnostics, but it can only work while the Bluetooth symbol is visible and the scale remains connectable.
 
-You should not need to open the integration or press a button for each weighing. The **Synchronize now** button remains available for diagnostics, but it can only work while the scale is awake.
+## Verification
 
-## First automatic-sync test
+After updating and restarting:
 
-1. Confirm that VitaDock is closed and phone Bluetooth is temporarily disabled.
-2. Complete a new weighing.
-3. Do not open the Medisana integration or press **Synchronize now**.
-4. Wait approximately 10 to 20 seconds.
-5. Check the weight and body-composition entities in Home Assistant.
-6. Check Home Assistant logs or download integration diagnostics if the values do not update.
+1. Open the BS430 device page.
+2. Check Device information for software version `0.3.1 (adea036)`.
+3. Complete a validated weighing.
+4. Do not press the button initially.
+5. Wait approximately 10–20 seconds and inspect the entities.
+6. If it fails, inspect Home Assistant logs for `BS430 wake advertisement received` and `Automatic BS430 synchronization`.
 
 ## Current limitations
 
-- Profile number 1 is still marked as probable rather than formally proven.
+- Profile number 1 remains probable rather than formally proven.
 - Scale-side target weight and unit settings are not writable yet.
-- Historical records are decoded, but persistent backfill into Home Assistant long-term statistics is not implemented yet.
+- Historical records are decoded, but persistent statistics backfill is not implemented yet.
 - The integration does not delete or acknowledge measurements on the scale.
-- If another phone or application connects first, Home Assistant may miss that synchronization window.
+- Another phone or application can claim the short connection window first.
 
 ## Rollback
 
 1. Remove the Medisana BS430 integration in **Settings → Devices & services**.
-2. Delete `/config/custom_components/medisana_bs430`.
+2. Remove it through HACS or delete `/config/custom_components/medisana_bs430`.
 3. Restart Home Assistant.
 
 This integration does not modify ZHA, VirtualBox USB passthrough or the Zigbee adapter.
