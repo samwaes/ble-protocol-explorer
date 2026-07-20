@@ -35,7 +35,8 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.address = entry.data[CONF_ADDRESS]
         self.last_measurements: list[dict[str, Any]] = []
         self._sync_lock = asyncio.Lock()
-        self._last_trigger_monotonic = 0.0
+        self._automatic_task: asyncio.Task | None = None
+        self.last_error: str | None = None
         self.data = {
             "latest": None,
             "measurements": [],
@@ -55,13 +56,15 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         return await self._async_synchronize_device(ble_device)
 
     async def _async_synchronize_device(self, ble_device) -> dict[str, Any]:
-        """Synchronize using the device from a fresh Bluetooth advertisement."""
+        """Synchronize using a fresh Bluetooth advertisement device."""
         async with self._sync_lock:
             try:
                 result = await synchronize(ble_device)
             except Exception as err:
+                self.last_error = str(err)
                 raise UpdateFailed(f"BS430 synchronization failed: {err}") from err
 
+            self.last_error = None
             self.last_measurements = [asdict(item) for item in result.measurements]
             latest = self.last_measurements[0] if self.last_measurements else None
             data = {
@@ -77,11 +80,14 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, service_info: bluetooth.BluetoothServiceInfoBleak
     ) -> None:
         """Start synchronization immediately when the configured scale wakes."""
-        now = self.hass.loop.time()
-        if self._sync_lock.locked() or now - self._last_trigger_monotonic < 5:
+        if self._automatic_task and not self._automatic_task.done():
             return
-        self._last_trigger_monotonic = now
-        self.hass.async_create_task(
+        _LOGGER.info(
+            "BS430 wake advertisement received from %s via %s",
+            service_info.address,
+            service_info.source,
+        )
+        self._automatic_task = self.hass.async_create_task(
             self._async_sync_from_discovery(service_info),
             "Medisana BS430 automatic synchronization",
         )
@@ -89,11 +95,24 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_sync_from_discovery(
         self, service_info: bluetooth.BluetoothServiceInfoBleak
     ) -> None:
-        """Run an automatic synchronization from a discovery callback."""
-        try:
-            await self._async_synchronize_device(service_info.device)
-        except UpdateFailed as err:
-            _LOGGER.debug("Automatic BS430 synchronization did not complete: %s", err)
+        """Retry briefly while the scale's Bluetooth wake window is open."""
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                await self._async_synchronize_device(service_info.device)
+                _LOGGER.info("Automatic BS430 synchronization succeeded")
+                return
+            except UpdateFailed as err:
+                last_error = err
+                _LOGGER.warning(
+                    "Automatic BS430 synchronization attempt %d failed: %s",
+                    attempt,
+                    err,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(0.8)
+        if last_error:
+            _LOGGER.error("Automatic BS430 synchronization failed: %s", last_error)
 
     async def async_sync_now(self) -> None:
         """Run a user-requested synchronization."""
