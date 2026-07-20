@@ -2,6 +2,10 @@
   "title": "Medisana BS430",
   "config": {
     "step": {
+      "user": {
+        "title": "Find Medisana BS430",
+        "description": "Wake the scale by completing a weighing, keep VitaDock disconnected, then submit to search again."
+      },
       "confirm": {
         "title": "Add Medisana BS430",
         "description": "Set up the discovered scale {name} at {address}.",
@@ -13,9 +17,11 @@
         }
       }
     },
+    "error": {
+      "device_not_found": "The scale was not found. Complete a weighing and try again while the scale is still awake."
+    },
     "abort": {
       "already_configured": "This scale is already configured.",
-      "bluetooth_discovery_required": "Wake the scale and wait for Home Assistant Bluetooth discovery.",
       "no_discovery_info": "Bluetooth discovery information is no longer available."
     }
   }
