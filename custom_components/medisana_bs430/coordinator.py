@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import timedelta
 import logging
 from typing import Any
 
@@ -12,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from medisana_bs430.bluetooth import BS430BluetoothClient
+from medisana_bs430.bluetooth import synchronize
 
 from .const import CONF_ADDRESS, DOMAIN
 
@@ -47,17 +46,17 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         try:
-            client = BS430BluetoothClient(ble_device)
-            measurements = await client.synchronize()
+            result = await synchronize(ble_device)
         except Exception as err:
             raise UpdateFailed(f"BS430 synchronization failed: {err}") from err
 
-        self.last_measurements = [asdict(item) for item in measurements]
+        self.last_measurements = [asdict(item) for item in result.measurements]
         latest = self.last_measurements[0] if self.last_measurements else None
         return {
             "latest": latest,
             "measurements": self.last_measurements,
             "record_count": len(self.last_measurements),
+            "completion_reason": result.completion_reason,
         }
 
     async def async_sync_now(self) -> None:
