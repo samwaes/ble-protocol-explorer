@@ -1,15 +1,43 @@
 # Medisana BS430 Local Integration
 
+**Status:** Beta  
+**Integration version:** `0.4.0`  
+**Protocol version:** `1.0.0`  
+**Source revision:** `68120aa`  
+**Released:** `2026-07-20`  
+**Current milestone:** Reliable automatic synchronization
+
 A Hupla Labs project to connect a **Medisana BS430 smart scale** directly to Home Assistant over Bluetooth Low Energy, without VitaDock or a cloud service.
+
+## Release 0.4.0
+
+This release focuses on the approximately 30-second Bluetooth wake window after a validated weighing.
+
+Changes:
+
+- automatic synchronization now matches the stable device-name prefix without requiring the proprietary service UUID in every advertisement;
+- a configured-address callback is registered as a fallback;
+- automatic connection attempts retry throughout most of the Bluetooth wake window;
+- synchronization diagnostics now record advertisements, automatic and manual triggers, attempts, successes, failures and the last error;
+- measurement sensors retain their last valid value while the scale is asleep or temporarily unreachable, preventing new `unavailable` gaps in Home Assistant history graphs;
+- the manual **Synchronize now** button remains available as a fallback.
+
+Expected normal workflow:
+
+```text
+Complete a validated weighing
+→ Bluetooth icon starts blinking
+→ Home Assistant detects the advertisement
+→ Bluetooth icon becomes continuously lit while connected
+→ Measurements update
+```
 
 ## Current status
 
-The core protocol has now been validated against a real synchronization session.
-
 Confirmed:
 
-- automatic discovery after the scale wakes;
-- successful Windows BLE connection;
+- direct local synchronization without VitaDock cloud;
+- successful Bluetooth connection and measurement import;
 - service `0x78B2` and characteristics `0x8A20`, `0x8A21`, `0x8A22`, `0x8A81`, `0x8A82`;
 - synchronization request through `0x8A81`;
 - several historical measurements returned in one connection;
@@ -19,9 +47,14 @@ Confirmed:
 - probable impedance field identified;
 - probable profile byte identified: tested user is app profile `1`, and the candidate packet field is also `01`.
 
-The next phase is a reusable protocol package followed by a native Home Assistant integration.
+Still under validation:
 
-## Architecture target
+- automatic synchronization reliability across repeated weighings;
+- profile-byte interpretation;
+- persistent duplicate prevention;
+- scale configuration commands for units, target weight and profile.
+
+## Architecture
 
 ```text
 Medisana BS430
@@ -75,14 +108,17 @@ These functions are included in the integration capability backlog. They will no
 - [x] Confirm multi-record history synchronization
 - [x] Correct timestamp epoch and frame pairing
 - [x] Preserve profile candidate and unknown fields
-- [ ] Refactor protocol into reusable Python modules
+- [x] Refactor protocol into reusable Python modules
 - [ ] Add fixture-based protocol tests
-- [ ] Scaffold native Home Assistant custom component
-- [ ] Add Bluetooth config flow and options flow
+- [x] Scaffold native Home Assistant custom component
+- [x] Add Bluetooth config flow
+- [ ] Add options flow
 - [ ] Add persistent duplicate prevention
-- [ ] Add sensors, history events, diagnostics and synchronize button
+- [x] Add sensors, diagnostics and synchronize button
+- [x] Preserve last sensor values between sync sessions
+- [ ] Validate repeated automatic synchronization
 - [ ] Investigate unit, target-weight and profile configuration commands
-- [ ] Package for HACS
+- [x] Package as a custom HACS repository
 
 See:
 
@@ -90,7 +126,19 @@ See:
 - [docs/protocol-bs430.md](docs/protocol-bs430.md) for protocol details;
 - [docs/home-assistant-integration-plan.md](docs/home-assistant-integration-plan.md) for the complete integration design.
 
-## Running the current validation reader
+## Testing release 0.4.0
+
+1. Update the custom repository in HACS.
+2. Confirm that HACS shows version `0.4.0`.
+3. Restart Home Assistant.
+4. Complete a full body-analysis weighing.
+5. Do not press **Synchronize now** during the first test.
+6. Verify that the scale Bluetooth icon changes from blinking to continuously lit and that the sensors update.
+7. Repeat after the scale has fully switched off.
+
+If automatic synchronization fails, use **Download diagnostics** on the integration device page. The diagnostics include the last advertisement, trigger type, attempt, successful synchronization and error counters.
+
+## Running the validation reader
 
 Requirements:
 
@@ -116,12 +164,11 @@ Wait for scanning, then complete a body-analysis weighing or wake the scale. Out
 
 ## Safety and privacy
 
-The current development phase does not:
+The integration does not:
 
-- install experimental code in Home Assistant OS;
+- use or require a cloud service;
 - modify VirtualBox USB passthrough;
 - use or change Zigbee/ZHA;
-- require a cloud service;
 - issue unverified profile, unit, target-weight, delete or reset commands.
 
 Body-composition readings are personal health data and should not be used for medical decisions.
