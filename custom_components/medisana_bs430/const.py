@@ -7,6 +7,9 @@ from typing import Final
 DOMAIN: Final = "medisana_bs430"
 PLATFORMS: Final = ["sensor", "button"]
 
+INTEGRATION_VERSION: Final = "0.3.1"
+BUILD_COMMIT: Final = "pending"
+
 CONF_ADDRESS: Final = "address"
 CONF_PROFILE_MAP: Final = "profile_map"
 CONF_IMPORT_HISTORY: Final = "import_history"
