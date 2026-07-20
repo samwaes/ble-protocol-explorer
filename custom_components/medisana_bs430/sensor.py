@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import MANUFACTURER, MODEL
+from .const import BUILD_COMMIT, INTEGRATION_VERSION, MANUFACTURER, MODEL
 from .coordinator import MedisanaBS430Coordinator
 
 
@@ -50,6 +50,7 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
             "manufacturer": MANUFACTURER,
             "model": MODEL,
             "name": entry.title,
+            "sw_version": f"{INTEGRATION_VERSION} ({BUILD_COMMIT[:7]})",
         }
 
     @property
@@ -61,9 +62,11 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         latest = self.coordinator.data.get("latest") if self.coordinator.data else None
         if not latest:
-            return {}
+            return {"integration_version": INTEGRATION_VERSION, "build_commit": BUILD_COMMIT}
         return {
             "measurement_time": latest.get("timestamp_local"),
             "profile_status": latest.get("profile_status"),
             "sync_record_count": self.coordinator.data.get("record_count"),
+            "integration_version": INTEGRATION_VERSION,
+            "build_commit": BUILD_COMMIT,
         }
