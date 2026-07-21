@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .bs430.bluetooth import synchronize
-from .const import CONF_ADDRESS, DOMAIN
+from .const import CONF_ADDRESS, DOMAIN, PRIMARY_PROFILE_ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +35,8 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.address = entry.data[CONF_ADDRESS]
         self.last_measurements: list[dict[str, Any]] = []
+        self.last_quarantined_measurements: list[dict[str, Any]] = []
+        self.profile_observations: list[dict[str, Any]] = []
         self._sync_lock = asyncio.Lock()
         self._automatic_task: asyncio.Task | None = None
         self.last_error: str | None = None
@@ -47,11 +49,16 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.manual_trigger_count = 0
         self.successful_sync_count = 0
         self.failed_sync_count = 0
+        self.accepted_record_count = 0
+        self.quarantined_record_count = 0
         self.sync_state = "waiting_for_scale"
         self.data = {
             "latest": None,
             "measurements": [],
+            "quarantined_measurements": [],
             "record_count": 0,
+            "accepted_record_count": 0,
+            "quarantined_record_count": 0,
             "completion_reason": "waiting_for_scale",
         }
 
@@ -59,6 +66,19 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Allow the next identical wake advertisement to trigger a callback."""
         bluetooth.async_clear_advertisement_history(self.hass, self.address)
         _LOGGER.debug("Cleared BS430 advertisement history for the next wake cycle")
+
+    @staticmethod
+    def _profile_observation(measurement: dict[str, Any], status: str) -> dict[str, Any]:
+        """Create a privacy-conscious observation for profile validation."""
+        return {
+            "scale_timestamp_utc": measurement.get("scale_timestamp_utc"),
+            "timestamp_raw": measurement.get("timestamp_raw"),
+            "profile_id_candidate": measurement.get("profile_id_candidate"),
+            "profile_confidence": measurement.get("profile_confidence"),
+            "status": status,
+            "has_weight_frame": measurement.get("weight_frame_hex") is not None,
+            "has_feature_frame": measurement.get("feature_frame_hex") is not None,
+        }
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Synchronize all currently stored records from the scale."""
@@ -95,12 +115,49 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.successful_sync_count += 1
             self.last_successful_sync = dt_util.utcnow().isoformat()
             self.sync_state = "complete"
-            self.last_measurements = [asdict(item) for item in result.measurements]
-            latest = self.last_measurements[0] if self.last_measurements else None
+
+            received_measurements = [asdict(item) for item in result.measurements]
+            accepted: list[dict[str, Any]] = []
+            quarantined: list[dict[str, Any]] = []
+            observations: list[dict[str, Any]] = []
+
+            for measurement in received_measurements:
+                profile_id = measurement.get("profile_id_candidate")
+                if profile_id == PRIMARY_PROFILE_ID:
+                    accepted.append(measurement)
+                    observations.append(self._profile_observation(measurement, "accepted"))
+                else:
+                    quarantined.append(measurement)
+                    observations.append(
+                        self._profile_observation(
+                            measurement,
+                            "quarantined_unknown_profile"
+                            if profile_id is None
+                            else "quarantined_non_primary_profile",
+                        )
+                    )
+
+            self.last_measurements = accepted
+            self.last_quarantined_measurements = quarantined
+            self.profile_observations = (observations + self.profile_observations)[:20]
+            self.accepted_record_count += len(accepted)
+            self.quarantined_record_count += len(quarantined)
+
+            if quarantined:
+                _LOGGER.warning(
+                    "Quarantined %d BS430 record(s) not matching primary profile %d",
+                    len(quarantined),
+                    PRIMARY_PROFILE_ID,
+                )
+
+            latest = accepted[0] if accepted else self.data.get("latest")
             data = {
                 "latest": latest,
-                "measurements": self.last_measurements,
-                "record_count": len(self.last_measurements),
+                "measurements": accepted,
+                "quarantined_measurements": quarantined,
+                "record_count": len(received_measurements),
+                "accepted_record_count": len(accepted),
+                "quarantined_record_count": len(quarantined),
                 "completion_reason": result.completion_reason,
             }
             self.async_set_updated_data(data)
@@ -140,8 +197,6 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         last_error: Exception | None = None
 
         try:
-            # The scale can advertise before its GATT service is ready. Keep trying
-            # during most of the visible Bluetooth blinking window.
             for attempt in range(1, 9):
                 try:
                     self.sync_state = "connecting"
@@ -170,9 +225,6 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             if last_error:
                 _LOGGER.error("Automatic BS430 synchronization failed: %s", last_error)
         finally:
-            # The scale reuses an identical wake advertisement on every weighing.
-            # Home Assistant deduplicates identical payloads, so clear the cache
-            # after the session to ensure the next power cycle is dispatched.
             self._clear_advertisement_history()
 
     async def async_sync_now(self) -> None:
