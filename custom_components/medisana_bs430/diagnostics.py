@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import BUILD_COMMIT, INTEGRATION_VERSION
+from .const import BUILD_COMMIT, INTEGRATION_VERSION, PRIMARY_PROFILE_ID
 
 
 async def async_get_config_entry_diagnostics(
@@ -42,13 +42,33 @@ async def async_get_config_entry_diagnostics(
             "record_count": coordinator.data.get("record_count", 0)
             if coordinator.data
             else 0,
+            "accepted_record_count_last_sync": coordinator.data.get(
+                "accepted_record_count", 0
+            )
+            if coordinator.data
+            else 0,
+            "quarantined_record_count_last_sync": coordinator.data.get(
+                "quarantined_record_count", 0
+            )
+            if coordinator.data
+            else 0,
+            "accepted_record_count_session": coordinator.accepted_record_count,
+            "quarantined_record_count_session": coordinator.quarantined_record_count,
             "completion_reason": coordinator.data.get("completion_reason")
             if coordinator.data
             else None,
             "latest_measurement_available": latest is not None,
         },
-        "protocol": {
+        "profile_validation": {
+            "mode": "primary-profile-only-with-quarantine",
+            "primary_profile_id": PRIMARY_PROFILE_ID,
             "profile_decoding": "probable-not-confirmed",
+            "observations": coordinator.profile_observations,
+            "quarantined_records_retained_in_memory": len(
+                coordinator.last_quarantined_measurements
+            ),
+        },
+        "protocol": {
             "scale_writes_enabled": False,
         },
     }
