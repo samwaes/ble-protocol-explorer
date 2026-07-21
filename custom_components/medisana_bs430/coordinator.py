@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .bs430.bluetooth import synchronize
-from .const import CONF_ADDRESS, DOMAIN, PRIMARY_PROFILE_ID
+from .const import CONF_ADDRESS, DOMAIN, MAX_PROFILE_ID, MIN_PROFILE_ID, PRIMARY_PROFILE_ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,17 +26,12 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=DOMAIN,
-            config_entry=entry,
-            update_interval=None,
-        )
+        super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry, update_interval=None)
         self.address = entry.data[CONF_ADDRESS]
         self.last_measurements: list[dict[str, Any]] = []
         self.last_quarantined_measurements: list[dict[str, Any]] = []
         self.profile_observations: list[dict[str, Any]] = []
+        self.latest_by_profile: dict[int, dict[str, Any]] = {}
         self._sync_lock = asyncio.Lock()
         self._automatic_task: asyncio.Task | None = None
         self.last_error: str | None = None
@@ -54,6 +49,7 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.sync_state = "waiting_for_scale"
         self.data = {
             "latest": None,
+            "latest_by_profile": {},
             "measurements": [],
             "quarantined_measurements": [],
             "record_count": 0,
@@ -90,14 +86,10 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         if ble_device is None:
             self.sync_state = "waiting_for_scale"
-            raise UpdateFailed(
-                "Scale is not currently available; complete a validated weighing"
-            )
+            raise UpdateFailed("Scale is not currently available; complete a validated weighing")
         return await self._async_synchronize_device(ble_device, trigger="manual")
 
-    async def _async_synchronize_device(
-        self, ble_device: Any, *, trigger: str
-    ) -> dict[str, Any]:
+    async def _async_synchronize_device(self, ble_device: Any, *, trigger: str) -> dict[str, Any]:
         """Synchronize using a fresh Bluetooth advertisement device."""
         async with self._sync_lock:
             self.last_attempt = dt_util.utcnow().isoformat()
@@ -123,36 +115,27 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             for measurement in received_measurements:
                 profile_id = measurement.get("profile_id_candidate")
-                if profile_id == PRIMARY_PROFILE_ID:
+                if isinstance(profile_id, int) and MIN_PROFILE_ID <= profile_id <= MAX_PROFILE_ID:
                     accepted.append(measurement)
                     observations.append(self._profile_observation(measurement, "accepted"))
+                    if profile_id not in self.latest_by_profile:
+                        self.latest_by_profile[profile_id] = measurement
                 else:
                     quarantined.append(measurement)
-                    observations.append(
-                        self._profile_observation(
-                            measurement,
-                            "quarantined_unknown_profile"
-                            if profile_id is None
-                            else "quarantined_non_primary_profile",
-                        )
-                    )
+                    observations.append(self._profile_observation(measurement, "quarantined_invalid_profile"))
 
             self.last_measurements = accepted
             self.last_quarantined_measurements = quarantined
-            self.profile_observations = (observations + self.profile_observations)[:20]
+            self.profile_observations = (observations + self.profile_observations)[:40]
             self.accepted_record_count += len(accepted)
             self.quarantined_record_count += len(quarantined)
 
             if quarantined:
-                _LOGGER.warning(
-                    "Quarantined %d BS430 record(s) not matching primary profile %d",
-                    len(quarantined),
-                    PRIMARY_PROFILE_ID,
-                )
+                _LOGGER.warning("Quarantined %d BS430 record(s) with an invalid profile", len(quarantined))
 
-            latest = accepted[0] if accepted else self.data.get("latest")
             data = {
-                "latest": latest,
+                "latest": self.latest_by_profile.get(PRIMARY_PROFILE_ID),
+                "latest_by_profile": dict(self.latest_by_profile),
                 "measurements": accepted,
                 "quarantined_measurements": quarantined,
                 "record_count": len(received_measurements),
@@ -164,38 +147,25 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.sync_state = "waiting_for_scale"
             return data
 
-    def async_handle_bluetooth_discovery(
-        self, service_info: bluetooth.BluetoothServiceInfoBleak
-    ) -> None:
+    def async_handle_bluetooth_discovery(self, service_info: bluetooth.BluetoothServiceInfoBleak) -> None:
         """Start synchronization immediately when the configured scale wakes."""
         self.advertisement_count += 1
         self.last_advertisement = dt_util.utcnow().isoformat()
-
         if self._automatic_task and not self._automatic_task.done():
-            _LOGGER.debug(
-                "BS430 advertisement received while synchronization is already active"
-            )
+            _LOGGER.debug("BS430 advertisement received while synchronization is already active")
             return
-
         self.automatic_trigger_count += 1
         self.last_trigger = "automatic"
         self.sync_state = "advertisement_seen"
-        _LOGGER.info(
-            "BS430 wake advertisement received from %s via %s",
-            service_info.address,
-            service_info.source,
-        )
+        _LOGGER.info("BS430 wake advertisement received from %s via %s", service_info.address, service_info.source)
         self._automatic_task = self.hass.async_create_task(
             self._async_sync_from_discovery(service_info),
             "Medisana BS430 automatic synchronization",
         )
 
-    async def _async_sync_from_discovery(
-        self, service_info: bluetooth.BluetoothServiceInfoBleak
-    ) -> None:
+    async def _async_sync_from_discovery(self, service_info: bluetooth.BluetoothServiceInfoBleak) -> None:
         """Retry while the scale's approximately 30-second wake window is open."""
         last_error: Exception | None = None
-
         try:
             for attempt in range(1, 9):
                 try:
@@ -203,24 +173,14 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ble_device = bluetooth.async_ble_device_from_address(
                         self.hass, service_info.address, connectable=True
                     ) or service_info.device
-                    await self._async_synchronize_device(
-                        ble_device, trigger="automatic"
-                    )
-                    _LOGGER.info(
-                        "Automatic BS430 synchronization succeeded on attempt %d",
-                        attempt,
-                    )
+                    await self._async_synchronize_device(ble_device, trigger="automatic")
+                    _LOGGER.info("Automatic BS430 synchronization succeeded on attempt %d", attempt)
                     return
                 except UpdateFailed as err:
                     last_error = err
-                    _LOGGER.warning(
-                        "Automatic BS430 synchronization attempt %d failed: %s",
-                        attempt,
-                        err,
-                    )
+                    _LOGGER.warning("Automatic BS430 synchronization attempt %d failed: %s", attempt, err)
                     if attempt < 8:
                         await asyncio.sleep(2.5)
-
             self.sync_state = "waiting_for_scale"
             if last_error:
                 _LOGGER.error("Automatic BS430 synchronization failed: %s", last_error)
