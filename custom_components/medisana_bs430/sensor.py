@@ -7,9 +7,10 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfMass
+from homeassistant.const import PERCENTAGE, STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfMass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BUILD_COMMIT, INTEGRATION_VERSION, MANUFACTURER, MAX_PROFILE_ID, MODEL, PRIMARY_PROFILE_ID, PROFILE_NAME_KEY_PREFIX
@@ -49,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     )
 
 
-class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
+class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity, RestoreEntity):
     entity_description: BS430SensorDescription
     _attr_has_entity_name = True
 
@@ -58,6 +59,8 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
         self.entity_description = description
         self.profile_id = profile_id
         self.profile_name = str(entry.options.get(f"{PROFILE_NAME_KEY_PREFIX}{profile_id}", "")).strip()
+        self._restored_value: int | float | str | None = None
+        self._restored_attributes: dict[str, Any] = {}
         if profile_id == PRIMARY_PROFILE_ID:
             self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         else:
@@ -72,6 +75,21 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
             "sw_version": f"{INTEGRATION_VERSION} ({BUILD_COMMIT[:7]})",
         }
 
+    async def async_added_to_hass(self) -> None:
+        """Restore the last valid value after an integration reload or HA restart."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None or last_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        try:
+            if self.entity_description.key == "profile":
+                self._restored_value = int(float(last_state.state))
+            else:
+                self._restored_value = float(last_state.state)
+        except (TypeError, ValueError):
+            self._restored_value = last_state.state
+        self._restored_attributes = dict(last_state.attributes)
+
     def _latest(self) -> dict[str, Any] | None:
         if not self.coordinator.data:
             return None
@@ -82,12 +100,16 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
         latest = self._latest()
         if latest and self.entity_description.data_key in latest:
             return latest.get(self.entity_description.data_key) is not None
-        return super().available
+        return self._restored_value is not None
 
     @property
     def native_value(self) -> Any:
         latest = self._latest()
-        return latest.get(self.entity_description.data_key) if latest else None
+        if latest:
+            value = latest.get(self.entity_description.data_key)
+            if value is not None:
+                return value
+        return self._restored_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -99,7 +121,7 @@ class BS430Sensor(CoordinatorEntity[MedisanaBS430Coordinator], SensorEntity):
             "build_commit": BUILD_COMMIT,
         }
         if not latest:
-            return base
+            return {**self._restored_attributes, **base}
         return {
             **base,
             "measurement_time": latest.get("timestamp_local"),
