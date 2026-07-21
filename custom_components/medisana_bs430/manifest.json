@@ -1,7 +1,7 @@
 {
   "domain": "medisana_bs430",
   "name": "Medisana BS430",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "documentation": "https://github.com/samwaes/ble-protocol-explorer/blob/main/docs/install-home-assistant.md",
   "issue_tracker": "https://github.com/samwaes/ble-protocol-explorer/issues",
   "codeowners": ["@samwaes"],
