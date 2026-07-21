@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import BUILD_COMMIT, INTEGRATION_VERSION, PRIMARY_PROFILE_ID
+from .const import BUILD_COMMIT, INTEGRATION_VERSION, MAX_PROFILE_ID, PROFILE_NAME_KEY_PREFIX
 
 
 async def async_get_config_entry_diagnostics(
@@ -15,18 +15,18 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return privacy-conscious diagnostics for a config entry."""
     coordinator = entry.runtime_data
-    latest = None
-    if coordinator.data:
-        latest = coordinator.data.get("latest")
+    latest_by_profile = coordinator.data.get("latest_by_profile", {}) if coordinator.data else {}
+    profile_names = {
+        profile_id: entry.options.get(f"{PROFILE_NAME_KEY_PREFIX}{profile_id}", "")
+        for profile_id in range(1, MAX_PROFILE_ID + 1)
+        if entry.options.get(f"{PROFILE_NAME_KEY_PREFIX}{profile_id}", "")
+    }
     return {
         "release": {
             "integration_version": INTEGRATION_VERSION,
             "build_commit": BUILD_COMMIT,
         },
-        "entry": {
-            "title": entry.title,
-            "unique_id": entry.unique_id,
-        },
+        "entry": {"title": entry.title, "unique_id": entry.unique_id},
         "runtime": {
             "sync_state": coordinator.sync_state,
             "last_trigger": coordinator.last_trigger,
@@ -39,36 +39,20 @@ async def async_get_config_entry_diagnostics(
             "manual_trigger_count": coordinator.manual_trigger_count,
             "successful_sync_count": coordinator.successful_sync_count,
             "failed_sync_count": coordinator.failed_sync_count,
-            "record_count": coordinator.data.get("record_count", 0)
-            if coordinator.data
-            else 0,
-            "accepted_record_count_last_sync": coordinator.data.get(
-                "accepted_record_count", 0
-            )
-            if coordinator.data
-            else 0,
-            "quarantined_record_count_last_sync": coordinator.data.get(
-                "quarantined_record_count", 0
-            )
-            if coordinator.data
-            else 0,
+            "record_count": coordinator.data.get("record_count", 0) if coordinator.data else 0,
+            "accepted_record_count_last_sync": coordinator.data.get("accepted_record_count", 0) if coordinator.data else 0,
+            "quarantined_record_count_last_sync": coordinator.data.get("quarantined_record_count", 0) if coordinator.data else 0,
             "accepted_record_count_session": coordinator.accepted_record_count,
             "quarantined_record_count_session": coordinator.quarantined_record_count,
-            "completion_reason": coordinator.data.get("completion_reason")
-            if coordinator.data
-            else None,
-            "latest_measurement_available": latest is not None,
+            "completion_reason": coordinator.data.get("completion_reason") if coordinator.data else None,
+            "profiles_with_current_data": sorted(latest_by_profile),
         },
-        "profile_validation": {
-            "mode": "primary-profile-only-with-quarantine",
-            "primary_profile_id": PRIMARY_PROFILE_ID,
-            "profile_decoding": "probable-not-confirmed",
+        "profiles": {
+            "mode": "profiles-1-to-8",
+            "supported_profile_ids": list(range(1, MAX_PROFILE_ID + 1)),
+            "configured_profile_names": profile_names,
             "observations": coordinator.profile_observations,
-            "quarantined_records_retained_in_memory": len(
-                coordinator.last_quarantined_measurements
-            ),
+            "invalid_records_retained_in_memory": len(coordinator.last_quarantined_measurements),
         },
-        "protocol": {
-            "scale_writes_enabled": False,
-        },
+        "protocol": {"scale_writes_enabled": False},
     }
