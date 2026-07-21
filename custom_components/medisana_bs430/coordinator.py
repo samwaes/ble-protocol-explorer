@@ -112,14 +112,16 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             accepted: list[dict[str, Any]] = []
             quarantined: list[dict[str, Any]] = []
             observations: list[dict[str, Any]] = []
+            profiles_seen_this_sync: set[int] = set()
 
             for measurement in received_measurements:
                 profile_id = measurement.get("profile_id_candidate")
                 if isinstance(profile_id, int) and MIN_PROFILE_ID <= profile_id <= MAX_PROFILE_ID:
                     accepted.append(measurement)
                     observations.append(self._profile_observation(measurement, "accepted"))
-                    if profile_id not in self.latest_by_profile:
+                    if profile_id not in profiles_seen_this_sync:
                         self.latest_by_profile[profile_id] = measurement
+                        profiles_seen_this_sync.add(profile_id)
                 else:
                     quarantined.append(measurement)
                     observations.append(self._profile_observation(measurement, "quarantined_invalid_profile"))
