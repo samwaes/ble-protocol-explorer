@@ -1,71 +1,70 @@
-# Controlled Home Assistant installation
+# Home Assistant installation
 
 ## Release identification
 
-- Integration version: `0.3.1`
-- Automatic-trigger code revision: `adea036481198c128973a7a7773fbdbc0d961f02`
-- HACS should show version `0.3.1` before installation.
-- Home Assistant device information shows `0.3.1 (adea036)` after restart.
-
-This integration is still experimental. Install it only for a controlled test and keep the existing Zigbee configuration unchanged.
+- Integration version: `0.5.0`
+- Multi-profile implementation revision: `940a667548c67d580e1fd4c90499259dc1bf622a`
+- Supported scale profiles: `1` through `8`
 
 ## Critical BS430 wake behaviour
 
-The BS430 is not continuously discoverable. Bluetooth becomes available only after a **fully completed and validated weighing**.
+The BS430 is not continuously discoverable. Bluetooth becomes available only after a fully completed and validated weighing.
 
-The correct sequence is:
+1. Select or confirm the intended profile on the scale.
+2. Stand still until the measurement is complete.
+3. Wait for the Bluetooth symbol.
+4. Home Assistant detects the advertisement and synchronizes during the short wake window.
 
-1. Stand on the scale and remain still until the measurement is fully completed.
-2. Complete profile confirmation on the scale when requested.
-3. Wait until the Bluetooth symbol appears on the scale display.
-4. Home Assistant must discover and connect during this short Bluetooth window.
+Keep VitaDock and other competing Bluetooth clients disconnected during testing.
 
-Simply tapping or waking the scale without completing a validated measurement may not expose the synchronization service. VitaDock or another phone may claim the connection window before Home Assistant, so disable or disconnect competing Bluetooth clients during testing.
-
-## Prerequisites
-
-- Home Assistant with a working Bluetooth adapter or Bluetooth proxy
-- Medisana BS430 within Bluetooth range
-- VitaDock and other phones disconnected while testing
-- File access through HACS, Studio Code Server, Samba, SSH or another supported method
-
-## Install
+## Install or update
 
 1. Install or update **Medisana BS430** through HACS.
-2. Confirm HACS shows version `0.3.1`.
+2. Confirm that HACS shows version `0.5.0`.
 3. Restart Home Assistant.
-4. Complete a full validated weighing and wait for the Bluetooth symbol.
-5. Immediately open **Settings → Devices & services → Add integration**.
-6. Search for **Medisana BS430** and confirm the discovered scale.
+4. Open **Settings → Devices & services → Medisana BS430**.
+5. Complete one weighing to verify automatic synchronization.
 
-If discovery misses the window, close the setup dialog, complete another full weighing, and retry immediately.
+## Link profiles to people
+
+Open the integration and choose **Configure**.
+
+The options form contains profile slots 1 through 8. Enter a person name for every profile that is in use.
+
+- Profile 1 remains available even when no name is entered, preserving the existing entity IDs and Home Assistant history.
+- Profiles 2 through 8 receive entities after a person name is configured.
+- Saving the profile names reloads the integration automatically.
+- Entity names include the configured person name, for example `Lieve Weight` or `Sam Body fat`.
+- The numeric profile ID and configured profile name are also included as entity attributes.
+
+Leaving an additional profile name blank avoids creating unused entities.
+
+## Multi-profile behaviour
+
+The scale returns the stored history for the profile currently active during the weighing. Version `0.5.0` routes valid profile IDs 1 through 8 to separate entity sets.
+
+Measurements with a missing or out-of-range profile ID are quarantined and cannot overwrite a person's sensors. Diagnostics list observed profile IDs and configured profile names but omit body-composition values and raw frame contents.
 
 ## Normal operation
 
-After setup, no fixed polling interval is used. A validated weighing produces a Bluetooth advertisement. The integration listens for that advertisement and immediately starts synchronization.
-
-Version `0.3.1` matches the BS430 by its stable local-name prefix and service UUID rather than relying only on the previously stored Bluetooth address. It retries up to three times within the short wake window.
-
-The **Synchronize now** button remains available for diagnostics, but it can only work while the Bluetooth symbol is visible and the scale remains connectable.
+No fixed polling interval is used. A validated weighing produces a Bluetooth advertisement and starts synchronization automatically. The **Synchronize now** button remains available as a fallback while the Bluetooth symbol is visible.
 
 ## Verification
 
-After updating and restarting:
-
-1. Open the BS430 device page.
-2. Check Device information for software version `0.3.1 (adea036)`.
-3. Complete a validated weighing.
-4. Do not press the button initially.
-5. Wait approximately 10–20 seconds and inspect the entities.
-6. If it fails, inspect Home Assistant logs for `BS430 wake advertisement received` and `Automatic BS430 synchronization`.
+1. Configure a name for profile 2.
+2. Complete a profile-2 weighing.
+3. Wait approximately 10–20 seconds.
+4. Confirm that only the profile-2 entities update.
+5. Repeat with profile 1 and confirm that the original entities update.
+6. Download diagnostics when profile routing needs to be verified.
 
 ## Current limitations
 
-- Profile number 1 remains probable rather than formally proven.
-- Scale-side target weight and unit settings are not writable yet.
-- Historical records are decoded, but persistent statistics backfill is not implemented yet.
-- The integration does not delete or acknowledge measurements on the scale.
-- Another phone or application can claim the short connection window first.
+- Scale-side profile names are not changed; the mapping exists only in Home Assistant.
+- Target weight and unit settings are not writable.
+- Persistent statistics backfill is not implemented.
+- Recent scale timestamps can currently decode with an incorrect year offset and remain under investigation.
+- Another phone or application can claim the short Bluetooth connection window first.
 
 ## Rollback
 
@@ -73,4 +72,4 @@ After updating and restarting:
 2. Remove it through HACS or delete `/config/custom_components/medisana_bs430`.
 3. Restart Home Assistant.
 
-This integration does not modify ZHA, VirtualBox USB passthrough or the Zigbee adapter.
+The integration does not modify ZHA, VirtualBox USB passthrough or the Zigbee adapter.
