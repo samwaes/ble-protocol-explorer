@@ -24,5 +24,33 @@
       "already_configured": "This scale is already configured.",
       "no_discovery_info": "Bluetooth discovery information is no longer available."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Link scale profiles to people",
+        "description": "Enter a person name for each profile that is in use. Profile 1 remains available for backward compatibility. Additional profile entities are created after a name is configured.",
+        "data": {
+          "profile_name_1": "Profile 1 person",
+          "profile_name_2": "Profile 2 person",
+          "profile_name_3": "Profile 3 person",
+          "profile_name_4": "Profile 4 person",
+          "profile_name_5": "Profile 5 person",
+          "profile_name_6": "Profile 6 person",
+          "profile_name_7": "Profile 7 person",
+          "profile_name_8": "Profile 8 person"
+        },
+        "data_description": {
+          "profile_name_1": "Optional display name for profile 1.",
+          "profile_name_2": "Enter a name to create entities for profile 2.",
+          "profile_name_3": "Enter a name to create entities for profile 3.",
+          "profile_name_4": "Enter a name to create entities for profile 4.",
+          "profile_name_5": "Enter a name to create entities for profile 5.",
+          "profile_name_6": "Enter a name to create entities for profile 6.",
+          "profile_name_7": "Enter a name to create entities for profile 7.",
+          "profile_name_8": "Enter a name to create entities for profile 8."
+        }
+      }
+    }
   }
 }
