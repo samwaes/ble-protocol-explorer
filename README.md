@@ -1,24 +1,33 @@
 # Medisana BS430 Local Integration
 
-**Status:** Stable for personal use  
-**Integration version:** `0.4.1`  
+**Status:** Stable for personal use; profile validation active  
+**Integration version:** `0.4.2`  
 **Protocol version:** `1.0.0`  
-**Released:** `2026-07-20`  
-**Current milestone:** First stable local Home Assistant version complete
+**Released:** `2026-07-21`  
+**Current milestone:** Validate multiple scale profiles without contaminating existing Home Assistant history
 
 A Hupla Labs project to connect a **Medisana BS430 smart scale** directly to Home Assistant over Bluetooth Low Energy, without VitaDock or a cloud service.
 
-## Release 0.4.1
+## Release 0.4.2
 
-Version `0.4.1` completes the first stable personal-use implementation.
+Version `0.4.2` adds a safe profile-validation mode.
 
-The final reliability issue was caused by Home Assistant deduplicating identical wake advertisements after the first successful session. The integration now clears Home Assistant's advertisement history after every synchronization window, allowing the same scale advertisement to trigger future connections again.
+- profile `1` is treated as the currently confirmed primary profile;
+- only profile-1 measurements may update the existing Home Assistant sensors;
+- measurements with another profile candidate are quarantined in memory;
+- measurements without a profile candidate are also quarantined;
+- quarantined measurements do not overwrite the current sensors or enter their history;
+- downloaded diagnostics show privacy-conscious profile observations, acceptance status and quarantine counters;
+- no profile, unit, target-weight, delete or reset commands are written to the scale.
+
+This is an intentionally conservative intermediate release. Separate Home Assistant entities for additional users will only be created after the profile byte has been confirmed through controlled measurements.
+
+## First stable synchronization result
+
+Version `0.4.1` resolved Home Assistant deduplication of identical wake advertisements by clearing advertisement history after each synchronization window.
 
 Confirmed acceptance result:
 
-- one initial successful automatic synchronization;
-- diagnostics used to identify the repeated-wake problem;
-- fix released in `0.4.1`;
 - three consecutive automatic synchronization tests succeeded;
 - the scale fully powered off between every test;
 - no use of the manual **Synchronize now** button was required.
@@ -35,6 +44,20 @@ Complete a validated weighing
 → Advertisement history is cleared for the next weighing
 ```
 
+## Profile validation test
+
+After installing `0.4.2`:
+
+1. Restart Home Assistant.
+2. Perform one full measurement with scale profile `2` and note the exact time.
+3. Let automatic synchronization finish.
+4. Confirm that the existing profile-1 sensors did not change to the profile-2 values.
+5. Download diagnostics from the integration page.
+6. Check `profile_validation.observations` for a record with `profile_id_candidate: 2` and status `quarantined_non_primary_profile`.
+7. Repeat once with profile `1` and confirm status `accepted`.
+
+The diagnostics deliberately omit body-composition values and raw frame contents from the profile observation list.
+
 ## Current capabilities
 
 - direct local synchronization without VitaDock cloud;
@@ -47,10 +70,8 @@ Complete a validated weighing
 - pairing of weight and body-composition frames by shared timestamp;
 - scale timestamps decoded as seconds since `2010-01-01`;
 - last valid sensor values retained while the scale sleeps or is temporarily unreachable;
-- Home Assistant history graphs no longer receive new `unavailable` gaps from expected sleep behaviour;
 - HACS installation and updates;
-- integration diagnostics with advertisement, trigger, attempt, success and failure information;
-- visible integration version and build revision.
+- integration diagnostics with advertisement, trigger, attempt, success, failure and profile-quarantine information.
 
 ## Protocol summary
 
@@ -75,31 +96,6 @@ The scale can return several stored measurements, newest first. The reader liste
 
 See [docs/protocol-bs430.md](docs/protocol-bs430.md) for the detailed current protocol specification.
 
-## Architecture
-
-```text
-Medisana BS430
-      ↓ Bluetooth Low Energy
-Reusable local protocol library
-      ↓
-History synchronizer and duplicate protection
-      ↓
-Native Home Assistant integration
-```
-
-## Installation and normal use
-
-Install the repository through HACS, restart Home Assistant and configure the discovered scale.
-
-For normal operation:
-
-1. Complete a full body-analysis weighing.
-2. Wait for the Bluetooth icon to start blinking.
-3. Home Assistant should connect automatically and the icon should become continuously lit.
-4. The measurements should update without opening VitaDock or pressing a button.
-
-Use **Download diagnostics** from the integration page if a future synchronization fails. The manual **Synchronize now** button remains available as a fallback.
-
 ## Completed work
 
 - [x] Confirm BLE advertisement and synchronization window
@@ -109,37 +105,21 @@ Use **Download diagnostics** from the integration page if a future synchronizati
 - [x] Confirm multi-record history synchronization
 - [x] Correct timestamp epoch and frame pairing
 - [x] Preserve profile candidate and unknown fields
-- [x] Refactor protocol into reusable Python modules
-- [x] Scaffold native Home Assistant custom component
-- [x] Add Bluetooth config flow
-- [x] Add sensors, diagnostics and synchronize button
+- [x] Add native Home Assistant integration, sensors, diagnostics and sync button
 - [x] Preserve last sensor values between sync sessions
 - [x] Support repeated automatic synchronization
-- [x] Clear Home Assistant advertisement history after each session
-- [x] Package as a custom HACS repository
 - [x] Validate three consecutive automatic tests after complete scale power-off
+- [x] Add primary-profile filtering and quarantine diagnostics
 
 ## Non-blocking backlog
 
+- [ ] Confirm profile `1` versus profile `2` through controlled measurements
+- [ ] Create separate entities for confirmed profiles
+- [ ] Add persistent duplicate handling across Home Assistant restarts
 - [ ] Add fixture-based protocol and coordinator tests
-- [ ] Add options flow where it creates real user value
-- [ ] Validate persistent duplicate handling across longer-term use
-- [ ] Restore the last measurement immediately after Home Assistant restart if needed
-- [ ] Validate multiple user profiles
 - [ ] Confirm impedance decoding
 - [ ] Investigate unit, target-weight and profile configuration commands
-- [ ] Monitor reliability during normal daily use and future Home Assistant Bluetooth changes
-
-## Confirmed official-app configuration surface
-
-The official app exposes:
-
-- body-weight unit: Metric, Imperial US and Imperial UK;
-- target weight;
-- numbered user profile;
-- tested user: profile `1`.
-
-These functions remain backlog items. They will not become writable controls until their GATT commands and read-back behaviour are verified.
+- [ ] Monitor reliability during normal daily use
 
 ## Repository documents
 
@@ -150,11 +130,6 @@ These functions remain backlog items. They will not become writable controls unt
 
 ## Safety and privacy
 
-The integration does not:
-
-- use or require a cloud service;
-- modify VirtualBox USB passthrough;
-- use or change Zigbee/ZHA;
-- issue unverified profile, unit, target-weight, delete or reset commands.
+The integration does not use a cloud service and does not issue unverified write commands to the scale. Quarantined records remain in integration memory only and are represented in diagnostics without measurement values or raw frame contents.
 
 Body-composition readings are personal health data and should not be used for medical decisions.
