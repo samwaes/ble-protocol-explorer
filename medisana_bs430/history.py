@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from statistics import fmean
 from typing import Iterable
 
 from .models import Measurement
@@ -30,13 +29,12 @@ def _measurement_time(measurement: Measurement) -> datetime:
 def build_hourly_measurement_statistics(
     measurements: Iterable[Measurement], value_attribute: str
 ) -> list[HourlyMeasurementStatistic]:
-    """Reconstruct hourly measurement statistics with carry-forward semantics.
+    """Reconstruct hourly statistics with Home Assistant state semantics.
 
-    Home Assistant measurement sensors keep their last state until the next
-    reading. For missing Bluetooth periods, the scale gives us discrete stored
-    readings. Rebuilding every hour between the first and last recovered reading
-    avoids leaving the stale pre-outage value in Home Assistant long-term stats.
-    Hours with multiple weigh-ins keep their observed min/max and arithmetic mean.
+    Recovered measurements are treated as state changes. The value remains
+    active until the next weighing, so each hourly mean is time-weighted and
+    min/max include every value active in that hour. For the portion of the first
+    hour before the first recovered point, the first recovered value is used.
     """
     points: list[tuple[datetime, float]] = []
     for measurement in measurements:
@@ -61,28 +59,35 @@ def build_hourly_measurement_statistics(
     result: list[HourlyMeasurementStatistic] = []
 
     while current_hour <= last_hour:
-        observations = observations_by_hour.get(current_hour, [])
-        if observations:
-            observations.sort(key=lambda item: item[0])
-            values = [value for _timestamp, value in observations]
-            carry_value = values[-1]
-            result.append(
-                HourlyMeasurementStatistic(
-                    start=current_hour,
-                    mean=fmean(values),
-                    minimum=min(values),
-                    maximum=max(values),
-                )
+        hour_end = current_hour + timedelta(hours=1)
+        observations = sorted(observations_by_hour.get(current_hour, []))
+        if carry_value is None:
+            if not observations:
+                current_hour = hour_end
+                continue
+            carry_value = observations[0][1]
+
+        current_value = carry_value
+        current_time = current_hour
+        values_in_hour = [current_value]
+        weighted_sum = 0.0
+
+        for timestamp, value in observations:
+            weighted_sum += current_value * (timestamp - current_time).total_seconds()
+            current_value = value
+            current_time = timestamp
+            values_in_hour.append(value)
+
+        weighted_sum += current_value * (hour_end - current_time).total_seconds()
+        carry_value = current_value
+        result.append(
+            HourlyMeasurementStatistic(
+                start=current_hour,
+                mean=weighted_sum / 3600.0,
+                minimum=min(values_in_hour),
+                maximum=max(values_in_hour),
             )
-        elif carry_value is not None:
-            result.append(
-                HourlyMeasurementStatistic(
-                    start=current_hour,
-                    mean=carry_value,
-                    minimum=carry_value,
-                    maximum=carry_value,
-                )
-            )
-        current_hour += timedelta(hours=1)
+        )
+        current_hour = hour_end
 
     return result
