@@ -1,100 +1,117 @@
 # Medisana BS430 Local Integration
 
-**Status:** Stable for personal use; profile validation active  
-**Integration version:** `0.4.2`  
-**Protocol version:** `1.0.0`  
-**Released:** `2026-07-21`  
-**Current milestone:** Validate multiple scale profiles without contaminating existing Home Assistant history
+**Status:** Stable for personal use; historical recovery enabled  
+**Integration version:** `0.6.0`  
+**Protocol version:** `1.1.0`  
+**Released:** `2026-08-30`  
+**Current milestone:** Recover scale memory safely after Bluetooth outages
 
 A Hupla Labs project to connect a **Medisana BS430 smart scale** directly to Home Assistant over Bluetooth Low Energy, without VitaDock or a cloud service.
 
-## Release 0.4.2
+## Release 0.6.0
 
-Version `0.4.2` adds a safe profile-validation mode.
+Version `0.6.0` fixes two issues found after a multi-week Bluetooth outage.
 
-- profile `1` is treated as the currently confirmed primary profile;
-- only profile-1 measurements may update the existing Home Assistant sensors;
-- measurements with another profile candidate are quarantined in memory;
-- measurements without a profile candidate are also quarantined;
-- quarantined measurements do not overwrite the current sensors or enter their history;
-- downloaded diagnostics show privacy-conscious profile observations, acceptance status and quarantine counters;
-- no profile, unit, target-weight, delete or reset commands are written to the scale.
+### Mixed timestamp epochs
 
-This is an intentionally conservative intermediate release. Separate Home Assistant entities for additional users will only be created after the profile byte has been confirmed through controlled measurements.
+The same physical BS430 has now been observed returning stored records in two timestamp formats:
 
-## First stable synchronization result
+- legacy Medisana seconds since `2010-01-01T00:00:00Z`;
+- Unix seconds since `1970-01-01T00:00:00Z`.
 
-Version `0.4.1` resolved Home Assistant deduplication of identical wake advertisements by clearing advertisement history after each synchronization window.
+The decoder evaluates both interpretations and selects the plausible timestamp closest to the current time. This prevents recent Unix timestamps from being incorrectly shifted into the year 2066 while retaining compatibility with older 2010-epoch records.
 
-Confirmed acceptance result:
+The established synchronization command remains:
 
-- three consecutive automatic synchronization tests succeeded;
-- the scale fully powered off between every test;
-- no use of the manual **Synchronize now** button was required.
+```text
+02 <current Unix timestamp as uint32 little-endian>
+```
 
-Expected normal workflow:
+No speculative scale write has been introduced.
+
+### Historical Home Assistant recovery
+
+A successful synchronization can return the scale's stored records, not only the newest weighing. Version `0.6.0` now uses those recovered records to rebuild Home Assistant long-term statistics for the corresponding profile sensors.
+
+- recovered records are routed by scale profile;
+- implausible timestamps are rejected before recorder import;
+- weight, body fat, body water, muscle, bone mass and impedance can be reconstructed when present;
+- Home Assistant's supported statistics import path is used, with no direct database writes;
+- imports are hourly because Home Assistant's supported long-term statistics API is hourly;
+- repeated synchronization is safe because an existing entity/hour statistic is updated rather than duplicated;
+- gaps between recovered weigh-ins are reconstructed using the last known recovered value, matching the normal state-holding behaviour of a Home Assistant measurement sensor;
+- the feature can be disabled under **Configure → Recover stored measurement history**.
+
+This repairs long-term trend views after a Bluetooth outage. It does not manufacture exact historical Home Assistant state-change events at the original minute and second.
+
+## Normal workflow
 
 ```text
 Complete a validated weighing
 → Bluetooth icon starts blinking
 → Home Assistant detects the advertisement
-→ Bluetooth icon becomes continuously lit while connected
-→ Measurements update
-→ Scale powers off
-→ Advertisement history is cleared for the next weighing
+→ Home Assistant connects and requests stored records
+→ mixed timestamp formats are normalized
+→ current profile sensors update
+→ recovered long-term statistics are queued
+→ scale powers off
+→ advertisement history is cleared for the next weighing
 ```
 
-## Profile validation test
-
-After installing `0.4.2`:
-
-1. Restart Home Assistant.
-2. Perform one full measurement with scale profile `2` and note the exact time.
-3. Let automatic synchronization finish.
-4. Confirm that the existing profile-1 sensors did not change to the profile-2 values.
-5. Download diagnostics from the integration page.
-6. Check `profile_validation.observations` for a record with `profile_id_candidate: 2` and status `quarantined_non_primary_profile`.
-7. Repeat once with profile `1` and confirm status `accepted`.
-
-The diagnostics deliberately omit body-composition values and raw frame contents from the profile observation list.
+No fixed polling interval is used.
 
 ## Current capabilities
 
 - direct local synchronization without VitaDock cloud;
 - automatic wake detection after a completed weighing;
-- repeated automatic synchronization across complete scale power cycles;
-- retry logic throughout most of the scale's short Bluetooth wake window;
+- retry logic throughout most of the short Bluetooth wake window;
 - manual **Synchronize now** fallback;
-- import of weight, body fat, body water, muscle and bone mass;
-- synchronization of several stored historical measurements in one connection;
+- weight, body fat, body water, muscle and bone mass import;
+- probable impedance decoding;
+- synchronization of multiple stored measurements in one connection;
 - pairing of weight and body-composition frames by shared timestamp;
-- scale timestamps decoded as seconds since `2010-01-01`;
-- last valid sensor values retained while the scale sleeps or is temporarily unreachable;
+- mixed Unix and Medisana-2010 timestamp decoding;
+- profiles `1` through `8`, with separate Home Assistant entity sets for configured profiles;
+- last valid sensor values retained while the scale sleeps or is unreachable;
+- hourly long-term statistics backfill from stored scale history;
 - HACS installation and updates;
-- integration diagnostics with advertisement, trigger, attempt, success, failure and profile-quarantine information.
+- diagnostics for Bluetooth activity, synchronization, profile routing, timestamp mode and history backfill.
 
 ## Protocol summary
 
 Confirmed service and characteristics:
 
 - service `0x78B2`;
-- characteristics `0x8A20`, `0x8A21`, `0x8A22`, `0x8A81`, `0x8A82`.
+- `0x8A20`: readable device/session value;
+- `0x8A21`: weight, timestamp, probable impedance and profile metadata;
+- `0x8A22`: timestamp and body-composition values;
+- `0x8A81`: synchronization/time command;
+- `0x8A82`: status/session indication.
 
-The synchronization command is:
-
-```text
-02 <current Unix timestamp as uint32 little-endian>
-```
-
-Captured measurement timestamps use:
-
-```text
-2010-01-01T00:00:00Z + encoded seconds
-```
-
-The scale can return several stored measurements, newest first. The reader listens until disconnect, timeout or inactivity and pairs `0x8A21` and `0x8A22` frames using their embedded timestamp.
+The scale can return several stored measurements, newest first. The reader listens until disconnect, timeout or inactivity and pairs `0x8A21` and `0x8A22` frames using their embedded timestamp key.
 
 See [docs/protocol-bs430.md](docs/protocol-bs430.md) for the detailed current protocol specification.
+
+## Release history
+
+### 0.5.1
+
+- restored sensor values after integration reloads and Home Assistant restarts;
+- retained multi-profile routing introduced in `0.5.0`.
+
+### 0.5.0
+
+- supported profile IDs `1` through `8`;
+- allowed profile-to-person naming in Home Assistant;
+- routed valid profile records to separate entity sets.
+
+### 0.4.2
+
+- introduced conservative profile validation and quarantine diagnostics.
+
+### 0.4.1
+
+- fixed repeated automatic synchronization by clearing Home Assistant Bluetooth advertisement history after each completed window.
 
 ## Completed work
 
@@ -103,33 +120,32 @@ See [docs/protocol-bs430.md](docs/protocol-bs430.md) for the detailed current pr
 - [x] Identify synchronization command
 - [x] Decode and validate measurement values
 - [x] Confirm multi-record history synchronization
-- [x] Correct timestamp epoch and frame pairing
-- [x] Preserve profile candidate and unknown fields
-- [x] Add native Home Assistant integration, sensors, diagnostics and sync button
+- [x] Pair weight and feature frames by timestamp
+- [x] Support profiles 1 through 8
 - [x] Preserve last sensor values between sync sessions
 - [x] Support repeated automatic synchronization
-- [x] Validate three consecutive automatic tests after complete scale power-off
-- [x] Add primary-profile filtering and quarantine diagnostics
+- [x] Detect both observed timestamp epochs
+- [x] Reject implausible history timestamps
+- [x] Rebuild hourly Home Assistant long-term statistics from stored scale records
+- [x] Make repeated history imports idempotent at the Home Assistant statistics layer
 
-## Non-blocking backlog
+## Remaining backlog
 
-- [ ] Confirm profile `1` versus profile `2` through controlled measurements
-- [ ] Create separate entities for confirmed profiles
-- [ ] Add persistent duplicate handling across Home Assistant restarts
-- [ ] Add fixture-based protocol and coordinator tests
-- [ ] Confirm impedance decoding
-- [ ] Investigate unit, target-weight and profile configuration commands
-- [ ] Monitor reliability during normal daily use
+- [ ] Add broader Home Assistant integration tests around recorder import
+- [ ] Confirm impedance decoding independently
+- [ ] Investigate unit, target-weight and profile configuration commands before enabling any such writes
+- [ ] Monitor mixed-epoch behaviour during normal daily use
+- [ ] Quantify the exact scale-side history capacity and overwrite behaviour on this hardware revision
 
 ## Repository documents
 
-- [PROJECT_SCOPE.md](PROJECT_SCOPE.md) — delivery phases
-- [docs/protocol-bs430.md](docs/protocol-bs430.md) — protocol details
-- [docs/home-assistant-integration-plan.md](docs/home-assistant-integration-plan.md) — integration design
-- [docs/install-home-assistant.md](docs/install-home-assistant.md) — Home Assistant installation
+- [PROJECT_SCOPE.md](PROJECT_SCOPE.md): delivery phases
+- [docs/protocol-bs430.md](docs/protocol-bs430.md): protocol details
+- [docs/home-assistant-integration-plan.md](docs/home-assistant-integration-plan.md): integration design
+- [docs/install-home-assistant.md](docs/install-home-assistant.md): Home Assistant installation and verification
 
 ## Safety and privacy
 
-The integration does not use a cloud service and does not issue unverified write commands to the scale. Quarantined records remain in integration memory only and are represented in diagnostics without measurement values or raw frame contents.
+The integration is local and does not use a cloud service. It does not issue unverified profile, unit, target-weight, delete or reset writes to the scale. Historical recovery uses Home Assistant's recorder statistics API instead of editing the recorder database directly.
 
 Body-composition readings are personal health data and should not be used for medical decisions.

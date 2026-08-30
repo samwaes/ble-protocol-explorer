@@ -11,7 +11,15 @@ from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_NAME
 
-from .const import CONF_ADDRESS, DOMAIN, MAX_PROFILE_ID, MODEL, PROFILE_NAME_KEY_PREFIX
+from .const import (
+    CONF_ADDRESS,
+    CONF_IMPORT_HISTORY,
+    DEFAULT_IMPORT_HISTORY,
+    DOMAIN,
+    MAX_PROFILE_ID,
+    MODEL,
+    PROFILE_NAME_KEY_PREFIX,
+)
 from .bs430.protocol import NAME_PREFIX, SERVICE_UUID
 
 
@@ -73,14 +81,26 @@ class MedisanaBS430ConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class MedisanaBS430OptionsFlow(OptionsFlow):
-    """Configure the person name linked to each scale profile."""
+    """Configure profile names and historical statistics recovery."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            cleaned = {key: str(value).strip() for key, value in user_input.items()}
+            cleaned: dict[str, Any] = {
+                CONF_IMPORT_HISTORY: bool(user_input.get(CONF_IMPORT_HISTORY, True))
+            }
+            for profile_id in range(1, MAX_PROFILE_ID + 1):
+                key = f"{PROFILE_NAME_KEY_PREFIX}{profile_id}"
+                cleaned[key] = str(user_input.get(key, "")).strip()
             return self.async_create_entry(title="", data=cleaned)
 
-        schema: dict[Any, Any] = {}
+        schema: dict[Any, Any] = {
+            vol.Optional(
+                CONF_IMPORT_HISTORY,
+                default=self.config_entry.options.get(
+                    CONF_IMPORT_HISTORY, DEFAULT_IMPORT_HISTORY
+                ),
+            ): bool
+        }
         for profile_id in range(1, MAX_PROFILE_ID + 1):
             key = f"{PROFILE_NAME_KEY_PREFIX}{profile_id}"
             schema[vol.Optional(key, default=self.config_entry.options.get(key, ""))] = str

@@ -29,6 +29,7 @@ class Measurement:
     feature_frame_hex: str | None = None
     unknown_weight_bytes_hex: str | None = None
     unknown_feature_bytes_hex: str | None = None
+    timestamp_epoch: str = "unknown"
 
     @property
     def complete(self) -> bool:

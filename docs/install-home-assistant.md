@@ -2,9 +2,10 @@
 
 ## Release identification
 
-- Integration version: `0.5.0`
-- Multi-profile implementation revision: `940a667548c67d580e1fd4c90499259dc1bf622a`
+- Integration version: `0.6.0`
 - Supported scale profiles: `1` through `8`
+- Historical recovery: enabled by default
+- Minimum Home Assistant version in HACS metadata: `2026.8.0`
 
 ## Critical BS430 wake behaviour
 
@@ -15,61 +16,88 @@ The BS430 is not continuously discoverable. Bluetooth becomes available only aft
 3. Wait for the Bluetooth symbol.
 4. Home Assistant detects the advertisement and synchronizes during the short wake window.
 
-Keep VitaDock and other competing Bluetooth clients disconnected during testing.
+Keep VitaDock and other competing Bluetooth clients disconnected during testing because another client can claim the short connection window first.
 
 ## Install or update
 
-1. Install or update **Medisana BS430** through HACS.
-2. Confirm that HACS shows version `0.5.0`.
+1. Open **HACS → Integrations → Medisana BS430**.
+2. Update or redownload the integration so the installed version is `0.6.0`.
 3. Restart Home Assistant.
 4. Open **Settings → Devices & services → Medisana BS430**.
-5. Complete one weighing to verify automatic synchronization.
+5. Complete one normal weighing and let the scale finish its Bluetooth cycle.
 
-## Link profiles to people
+For an existing installation, the historical recovery option defaults to enabled even when that option did not exist in the previous config entry.
+
+## Profiles and history recovery
 
 Open the integration and choose **Configure**.
 
-The options form contains profile slots 1 through 8. Enter a person name for every profile that is in use.
+The options form contains:
 
-- Profile 1 remains available even when no name is entered, preserving the existing entity IDs and Home Assistant history.
-- Profiles 2 through 8 receive entities after a person name is configured.
-- Saving the profile names reloads the integration automatically.
-- Entity names include the configured person name, for example `Lieve Weight` or `Sam Body fat`.
-- The numeric profile ID and configured profile name are also included as entity attributes.
+- **Recover stored measurement history**;
+- profile slots 1 through 8.
 
-Leaving an additional profile name blank avoids creating unused entities.
+Profile 1 preserves the existing entity IDs. Profiles 2 through 8 receive entities after a person name is configured. Saving the options reloads the integration automatically.
 
-## Multi-profile behaviour
+## How historical recovery works
 
-The scale returns the stored history for the profile currently active during the weighing. Version `0.5.0` routes valid profile IDs 1 through 8 to separate entity sets.
+A scale synchronization can return multiple stored measurements. Version `0.6.0` uses those records for two purposes:
 
-Measurements with a missing or out-of-range profile ID are quarantined and cannot overwrite a person's sensors. Diagnostics list observed profile IDs and configured profile names but omit body-composition values and raw frame contents.
+1. the latest valid record for each profile updates the normal Home Assistant sensor entities;
+2. the recovered records rebuild hourly long-term statistics through Home Assistant's recorder statistics API.
 
-## Normal operation
+The backfill is duplicate-safe at hourly resolution. If the same recovered hour is imported again, Home Assistant updates the existing statistic instead of creating another row.
 
-No fixed polling interval is used. A validated weighing produces a Bluetooth advertisement and starts synchronization automatically. The **Synchronize now** button remains available as a fallback while the Bluetooth symbol is visible.
+No direct SQLite or recorder-database modification is performed.
 
-## Verification
+### Hourly resolution
 
-1. Configure a name for profile 2.
-2. Complete a profile-2 weighing.
-3. Wait approximately 10–20 seconds.
-4. Confirm that only the profile-2 entities update.
-5. Repeat with profile 1 and confirm that the original entities update.
-6. Download diagnostics when profile routing needs to be verified.
+Home Assistant's supported long-term statistics import interface requires timestamps on the top of the hour. The integration therefore reconstructs hourly mean, minimum and maximum values.
+
+Between recovered weigh-ins, the last recovered value is carried forward. This matches the normal behaviour of a Home Assistant measurement sensor, whose state remains unchanged until the next measurement. When several readings fall in the same hour, the mean is time-weighted by how long each reading remained the active state.
+
+This repairs long-term trends after an outage. It does not create exact historical state-change events at the original minute and second.
+
+## Mixed timestamp handling
+
+Captured BS430 history has now shown two encodings on the same physical device:
+
+- Unix seconds;
+- seconds since `2010-01-01T00:00:00Z`.
+
+Version `0.6.0` evaluates both candidates and selects the plausible interpretation nearest the current time. This prevents Unix records from being shifted approximately 40 years into the future while keeping older legacy records valid.
+
+The synchronization command itself remains on Unix time. No new speculative write command is sent to the scale.
+
+## Verification after update
+
+After the first complete weighing following the update:
+
+1. Wait until the scale powers off.
+2. Confirm that the current weight sensor updated.
+3. Open **History** and inspect a period that includes the Bluetooth outage.
+4. Download diagnostics from the Medisana BS430 integration.
+5. Check:
+   - `release.integration_version` is `0.6.0`;
+   - `profiles.observations[*].timestamp_epoch` is `unix` or `medisana_2010`;
+   - timestamps are in a plausible current year;
+   - `history_backfill.enabled` is `true`;
+   - `history_backfill.statistics_imported` is greater than zero when stored history was available;
+   - `history_backfill.error` is absent.
 
 ## Current limitations
 
-- Scale-side profile names are not changed; the mapping exists only in Home Assistant.
+- The amount of recoverable history is limited by the scale's own memory and overwrite behaviour.
+- Historical recovery repairs Home Assistant long-term statistics, not raw second-level recorder state history.
+- If several weigh-ins occur within one hour, that hour stores their time-weighted mean, minimum and maximum in long-term statistics.
+- Scale-side profile names are not changed. The name mapping exists only in Home Assistant.
 - Target weight and unit settings are not writable.
-- Persistent statistics backfill is not implemented.
-- Recent scale timestamps can currently decode with an incorrect year offset and remain under investigation.
+- Impedance decoding remains probable rather than independently confirmed.
 - Another phone or application can claim the short Bluetooth connection window first.
 
 ## Rollback
 
-1. Remove the Medisana BS430 integration in **Settings → Devices & services**.
-2. Remove it through HACS or delete `/config/custom_components/medisana_bs430`.
-3. Restart Home Assistant.
+1. In HACS, reinstall the previous known-good release or remove Medisana BS430.
+2. Restart Home Assistant.
 
-The integration does not modify ZHA, VirtualBox USB passthrough or the Zigbee adapter.
+Removing the integration does not alter ZHA, the Zigbee adapter or unrelated Home Assistant integrations. Long-term statistics already imported into the recorder are not automatically deleted by removing the integration.

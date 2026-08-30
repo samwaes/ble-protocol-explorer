@@ -32,7 +32,9 @@ class MeasurementAssembler:
 
     def result(self, completion_reason: str) -> SyncResult:
         measurements = sorted(
-            self._complete.values(), key=lambda item: item.timestamp_raw, reverse=True
+            self._complete.values(),
+            key=lambda item: item.scale_timestamp_utc,
+            reverse=True,
         )
         return SyncResult(
             measurements=measurements,

@@ -1,0 +1,24 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install test tools and Home Assistant API target
+        run: >-
+          python -m pip install --upgrade pip pytest "homeassistant==2026.8.2" "aiousbwatcher==1.1.2" "serialx==1.8.2"
+      - name: Compile integration
+        run: python -m compileall -q medisana_bs430 custom_components/medisana_bs430
+      - name: Verify Home Assistant recorder API imports
+        run: >-
+          python -c "from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData; from homeassistant.components.recorder.statistics import async_import_statistics; from homeassistant.util.unit_conversion import MassConverter, UnitlessRatioConverter; import custom_components.medisana_bs430.statistics"
+      - name: Run protocol and history tests
+        run: python -m pytest -q tests/test_decoder.py tests/test_history.py tests/test_ha_vendored_decoder.py

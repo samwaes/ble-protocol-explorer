@@ -15,6 +15,12 @@ MEDISANA_EPOCH_OFFSET = 1_262_304_000
 
 
 def build_sync_command(unix_seconds: int | None = None) -> bytes:
-    """Build the established BS430 synchronization request."""
+    """Build the established BS430 synchronization request.
+
+    BS430 units can contain stored measurements using either Unix seconds or the
+    legacy Medisana 2010 epoch. The command itself is intentionally kept on Unix
+    time because current 0203B units accept it and switching the write format is
+    not needed to recover legacy records.
+    """
     value = int(time.time()) if unix_seconds is None else unix_seconds
     return bytes([0x02]) + value.to_bytes(4, "little", signed=False)
