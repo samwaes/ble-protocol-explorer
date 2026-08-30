@@ -139,6 +139,9 @@ def import_recovered_history(
             entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
             if entity_id is None:
                 continue
+            entity_entry = registry.async_get(entity_id)
+            if entity_entry is None or entity_entry.disabled_by is not None:
+                continue
 
             hourly = build_hourly_measurement_statistics(
                 profile_measurements, spec.value_attribute
