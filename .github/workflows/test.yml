@@ -1,0 +1,20 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install test tools
+        run: python -m pip install --upgrade pip pytest
+      - name: Compile integration
+        run: python -m compileall -q medisana_bs430 custom_components/medisana_bs430
+      - name: Run protocol and history tests
+        run: python -m pytest -q tests/test_decoder.py tests/test_history.py
