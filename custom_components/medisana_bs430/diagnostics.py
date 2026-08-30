@@ -47,6 +47,7 @@ async def async_get_config_entry_diagnostics(
             "completion_reason": coordinator.data.get("completion_reason") if coordinator.data else None,
             "profiles_with_current_data": sorted(latest_by_profile),
         },
+        "history_backfill": dict(coordinator.last_history_import),
         "profiles": {
             "mode": "profiles-1-to-8",
             "supported_profile_ids": list(range(1, MAX_PROFILE_ID + 1)),
@@ -54,5 +55,9 @@ async def async_get_config_entry_diagnostics(
             "observations": coordinator.profile_observations,
             "invalid_records_retained_in_memory": len(coordinator.last_quarantined_measurements),
         },
-        "protocol": {"scale_writes_enabled": False},
+        "protocol": {
+            "scale_writes_enabled": False,
+            "measurement_timestamp_modes": ["unix", "medisana_2010"],
+            "sync_command_timestamp_mode": "unix",
+        },
     }
