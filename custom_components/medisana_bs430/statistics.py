@@ -17,7 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfMass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.util.unit_conversion import MassConverter
+from homeassistant.util.unit_conversion import MassConverter, UnitlessRatioConverter
 
 from .bs430.history import build_hourly_measurement_statistics
 from .bs430.models import Measurement
@@ -41,9 +41,21 @@ class _StatisticSensorSpec:
 
 _STATISTIC_SENSOR_SPECS = (
     _StatisticSensorSpec("weight", "weight_kg", UnitOfMass.KILOGRAMS, MassConverter.UNIT_CLASS),
-    _StatisticSensorSpec("body_fat", "body_fat_percent", PERCENTAGE, None),
-    _StatisticSensorSpec("body_water", "body_water_percent", PERCENTAGE, None),
-    _StatisticSensorSpec("muscle", "muscle_percent", PERCENTAGE, None),
+    _StatisticSensorSpec(
+        "body_fat",
+        "body_fat_percent",
+        PERCENTAGE,
+        UnitlessRatioConverter.UNIT_CLASS,
+    ),
+    _StatisticSensorSpec(
+        "body_water",
+        "body_water_percent",
+        PERCENTAGE,
+        UnitlessRatioConverter.UNIT_CLASS,
+    ),
+    _StatisticSensorSpec(
+        "muscle", "muscle_percent", PERCENTAGE, UnitlessRatioConverter.UNIT_CLASS
+    ),
     _StatisticSensorSpec("bone_mass", "bone_mass_kg", UnitOfMass.KILOGRAMS, MassConverter.UNIT_CLASS),
     _StatisticSensorSpec("impedance", "impedance_ohm", "Ω", None),
 )
