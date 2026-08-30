@@ -5,7 +5,7 @@
 - Integration version: `0.6.0`
 - Supported scale profiles: `1` through `8`
 - Historical recovery: enabled by default
-- Minimum Home Assistant version in HACS metadata: `2026.6.0`
+- Minimum Home Assistant version in HACS metadata: `2026.8.0`
 
 ## Critical BS430 wake behaviour
 
