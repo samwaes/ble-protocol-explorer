@@ -18,7 +18,6 @@ class RawPacket:
 class Measurement:
     timestamp_raw: int
     scale_timestamp_utc: str
-    timestamp_epoch: str = "unknown"
     weight_kg: Optional[float] = None
     body_fat_percent: Optional[float] = None
     body_water_percent: Optional[float] = None
@@ -31,6 +30,7 @@ class Measurement:
     feature_frame_hex: Optional[str] = None
     unknown_weight_bytes_hex: Optional[str] = None
     unknown_feature_bytes_hex: Optional[str] = None
+    timestamp_epoch: str = "unknown"
 
     @property
     def complete(self) -> bool:
