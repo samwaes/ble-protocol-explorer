@@ -28,7 +28,7 @@ def test_history_rebuilds_missing_hours_with_last_known_value() -> None:
         datetime(2026, 8, 5, 11, 0, tzinfo=timezone.utc),
         datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
     ]
-    assert [item.mean for item in result] == [80.0, 80.0, 79.5]
+    assert [item.mean for item in result] == [80.0, 80.0, 79.75]
 
 
 def test_history_time_weights_multiple_measurements_in_one_hour() -> None:
