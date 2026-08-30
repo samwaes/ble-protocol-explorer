@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from medisana_bs430.history import build_hourly_measurement_statistics
 from medisana_bs430.models import Measurement
 
@@ -29,7 +31,7 @@ def test_history_rebuilds_missing_hours_with_last_known_value() -> None:
     assert [item.mean for item in result] == [80.0, 80.0, 79.5]
 
 
-def test_history_aggregates_multiple_measurements_in_one_hour() -> None:
+def test_history_time_weights_multiple_measurements_in_one_hour() -> None:
     measurements = [
         _measurement("2026-08-05T10:05:00+00:00", 80.0),
         _measurement("2026-08-05T10:45:00+00:00", 79.6),
@@ -39,7 +41,7 @@ def test_history_aggregates_multiple_measurements_in_one_hour() -> None:
 
     assert len(result) == 1
     assert result[0].start == datetime(2026, 8, 5, 10, 0, tzinfo=timezone.utc)
-    assert result[0].mean == 79.8
+    assert result[0].mean == pytest.approx(79.9)
     assert result[0].minimum == 79.6
     assert result[0].maximum == 80.0
 
