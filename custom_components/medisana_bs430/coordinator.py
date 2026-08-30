@@ -14,7 +14,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .bs430.bluetooth import synchronize
+from .bs430.models import Measurement
 from .const import CONF_ADDRESS, DOMAIN, MAX_PROFILE_ID, MIN_PROFILE_ID, PRIMARY_PROFILE_ID
+from .statistics import import_recovered_history
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +34,12 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_quarantined_measurements: list[dict[str, Any]] = []
         self.profile_observations: list[dict[str, Any]] = []
         self.latest_by_profile: dict[int, dict[str, Any]] = {}
+        self.last_history_import: dict[str, Any] = {
+            "enabled": False,
+            "records_considered": 0,
+            "statistics_imported": 0,
+            "entities_imported": 0,
+        }
         self._sync_lock = asyncio.Lock()
         self._automatic_task: asyncio.Task | None = None
         self.last_error: str | None = None
@@ -69,6 +77,7 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "scale_timestamp_utc": measurement.get("scale_timestamp_utc"),
             "timestamp_raw": measurement.get("timestamp_raw"),
+            "timestamp_epoch": measurement.get("timestamp_epoch"),
             "profile_id_candidate": measurement.get("profile_id_candidate"),
             "profile_confidence": measurement.get("profile_confidence"),
             "status": status,
@@ -110,14 +119,18 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             received_measurements = [asdict(item) for item in result.measurements]
             accepted: list[dict[str, Any]] = []
+            accepted_models: list[Measurement] = []
             quarantined: list[dict[str, Any]] = []
             observations: list[dict[str, Any]] = []
             profiles_seen_this_sync: set[int] = set()
 
-            for measurement in received_measurements:
+            for model, measurement in zip(
+                result.measurements, received_measurements, strict=True
+            ):
                 profile_id = measurement.get("profile_id_candidate")
                 if isinstance(profile_id, int) and MIN_PROFILE_ID <= profile_id <= MAX_PROFILE_ID:
                     accepted.append(measurement)
+                    accepted_models.append(model)
                     observations.append(self._profile_observation(measurement, "accepted"))
                     if profile_id not in profiles_seen_this_sync:
                         self.latest_by_profile[profile_id] = measurement
@@ -146,6 +159,27 @@ class MedisanaBS430Coordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "completion_reason": result.completion_reason,
             }
             self.async_set_updated_data(data)
+
+            try:
+                self.last_history_import = import_recovered_history(
+                    self.hass, self.config_entry, accepted_models
+                )
+                if self.last_history_import.get("statistics_imported"):
+                    _LOGGER.info(
+                        "Queued %d reconstructed BS430 statistics rows across %d entities",
+                        self.last_history_import["statistics_imported"],
+                        self.last_history_import["entities_imported"],
+                    )
+            except Exception as err:  # History repair must never break live scale sync.
+                _LOGGER.exception("BS430 history backfill failed")
+                self.last_history_import = {
+                    "enabled": True,
+                    "records_considered": len(accepted_models),
+                    "statistics_imported": 0,
+                    "entities_imported": 0,
+                    "error": str(err),
+                }
+
             self.sync_state = "waiting_for_scale"
             return data
 
