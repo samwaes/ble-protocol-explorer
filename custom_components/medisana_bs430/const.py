@@ -8,7 +8,7 @@ DOMAIN: Final = "medisana_bs430"
 PLATFORMS: Final = ["sensor", "button"]
 
 INTEGRATION_VERSION: Final = "0.6.0"
-BUILD_COMMIT: Final = "001cc032d6ad8721de67503ca2dae547ccea1004"
+BUILD_COMMIT: Final = "4d2c89bc7cbf3caa6ba5ccb565b2d181b1d69423"
 
 CONF_ADDRESS: Final = "address"
 CONF_PROFILE_MAP: Final = "profile_map"
