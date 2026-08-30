@@ -28,9 +28,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Link scale profiles to people",
-        "description": "Enter a person name for each profile that is in use. Profile 1 remains available for backward compatibility. Additional profile entities are created after a name is configured.",
+        "title": "Profiles and history recovery",
+        "description": "Link scale profiles to people and control historical statistics recovery. Historical backfill uses the scale's stored measurements to repair Home Assistant long-term trends after Bluetooth outages.",
         "data": {
+          "import_history": "Recover stored measurement history",
           "profile_name_1": "Profile 1 person",
           "profile_name_2": "Profile 2 person",
           "profile_name_3": "Profile 3 person",
@@ -41,6 +42,7 @@
           "profile_name_8": "Profile 8 person"
         },
         "data_description": {
+          "import_history": "Recommended. Rebuild hourly long-term statistics from valid stored records. Repeated imports update the same hours rather than creating duplicates.",
           "profile_name_1": "Optional display name for profile 1.",
           "profile_name_2": "Enter a name to create entities for profile 2.",
           "profile_name_3": "Enter a name to create entities for profile 3.",
