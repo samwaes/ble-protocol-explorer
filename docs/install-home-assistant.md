@@ -54,7 +54,7 @@ No direct SQLite or recorder-database modification is performed.
 
 Home Assistant's supported long-term statistics import interface requires timestamps on the top of the hour. The integration therefore reconstructs hourly mean, minimum and maximum values.
 
-Between recovered weigh-ins, the last recovered value is carried forward. This matches the normal behaviour of a Home Assistant measurement sensor, whose state remains unchanged until the next measurement.
+Between recovered weigh-ins, the last recovered value is carried forward. This matches the normal behaviour of a Home Assistant measurement sensor, whose state remains unchanged until the next measurement. When several readings fall in the same hour, the mean is time-weighted by how long each reading remained the active state.
 
 This repairs long-term trends after an outage. It does not create exact historical state-change events at the original minute and second.
 
@@ -89,7 +89,7 @@ After the first complete weighing following the update:
 
 - The amount of recoverable history is limited by the scale's own memory and overwrite behaviour.
 - Historical recovery repairs Home Assistant long-term statistics, not raw second-level recorder state history.
-- If several weigh-ins occur within one hour, that hour stores their arithmetic mean, minimum and maximum in long-term statistics.
+- If several weigh-ins occur within one hour, that hour stores their time-weighted mean, minimum and maximum in long-term statistics.
 - Scale-side profile names are not changed. The name mapping exists only in Home Assistant.
 - Target weight and unit settings are not writable.
 - Impedance decoding remains probable rather than independently confirmed.
