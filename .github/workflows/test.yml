@@ -13,7 +13,8 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install test tools and Home Assistant API target
-        run: python -m pip install --upgrade pip pytest "homeassistant==2026.8.2"
+        run: >-
+          python -m pip install --upgrade pip pytest "homeassistant==2026.8.2" "aiousbwatcher==1.1.2" "serialx==1.8.2"
       - name: Compile integration
         run: python -m compileall -q medisana_bs430 custom_components/medisana_bs430
       - name: Verify Home Assistant recorder API imports
