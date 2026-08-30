@@ -1,7 +1,10 @@
 """Regression tests for the protocol code shipped inside the HA component."""
 
+from datetime import datetime, timezone
+
 from custom_components.medisana_bs430.bs430.decoder import (
     decode_feature_frame,
+    decode_timestamp,
     decode_weight_frame,
 )
 
@@ -18,6 +21,7 @@ def test_known_1649_measurement() -> None:
     measurement = decode_feature_frame(features, measurement)
 
     assert measurement.scale_timestamp_utc == "2026-07-20T14:49:25+00:00"
+    assert measurement.timestamp_epoch == "medisana_2010"
     assert measurement.weight_kg == 81.0
     assert measurement.body_fat_percent == 20.0
     assert measurement.body_water_percent == 61.7
@@ -26,3 +30,11 @@ def test_known_1649_measurement() -> None:
     assert measurement.impedance_ohm == 487.7
     assert measurement.profile_id_candidate == 1
     assert measurement.complete
+
+
+def test_august_unix_timestamp() -> None:
+    reference = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+    decoded, epoch = decode_timestamp(1788067144, reference=reference)
+
+    assert decoded.isoformat() == "2026-08-30T05:19:04+00:00"
+    assert epoch == "unix"
