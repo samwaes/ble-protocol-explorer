@@ -34,7 +34,7 @@ class MeasurementAssembler:
         return SyncResult(
             measurements=sorted(
                 self._complete.values(),
-                key=lambda item: item.timestamp_raw,
+                key=lambda item: item.scale_timestamp_utc,
                 reverse=True,
             ),
             status_frames=list(self.status_frames),
