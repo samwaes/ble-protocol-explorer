@@ -7,8 +7,8 @@ from typing import Final
 DOMAIN: Final = "medisana_bs430"
 PLATFORMS: Final = ["sensor", "button"]
 
-INTEGRATION_VERSION: Final = "0.5.1"
-BUILD_COMMIT: Final = "95973306946f3aa03b41aebf745fdf248ddd5784"
+INTEGRATION_VERSION: Final = "0.6.0"
+BUILD_COMMIT: Final = "001cc032d6ad8721de67503ca2dae547ccea1004"
 
 CONF_ADDRESS: Final = "address"
 CONF_PROFILE_MAP: Final = "profile_map"
