@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from .models import Measurement
 from .protocol import MEDISANA_EPOCH_OFFSET
 
+_TIMESTAMP_PLAUSIBILITY_SECONDS = int(5 * 365.25 * 24 * 60 * 60)
+
 
 def timestamp_key(payload: bytes) -> int:
     if len(payload) < 5:
@@ -17,19 +19,58 @@ def timestamp_key(payload: bytes) -> int:
     return int.from_bytes(payload[offset : offset + 4], "little")
 
 
-def timestamp_to_utc(raw: int) -> str:
-    unix_seconds = raw + MEDISANA_EPOCH_OFFSET
-    return datetime.fromtimestamp(unix_seconds, timezone.utc).isoformat(timespec="seconds")
+def decode_timestamp(
+    raw: int, *, reference: datetime | None = None
+) -> tuple[datetime, str]:
+    """Decode a BS430 timestamp that may use Unix or the legacy 2010 epoch.
+
+    Captures from the same physical BS430 have contained both encodings. The
+    scale only keeps a small recent history, so the candidate closest to the
+    current/reference time is the safest deterministic choice. A five-year
+    plausibility window is used first, then proximity is used as a fallback so
+    diagnostics still expose clock-corrupted records rather than crashing.
+    """
+    if raw < 0:
+        raise ValueError("Timestamp cannot be negative")
+
+    reference = reference or datetime.now(timezone.utc)
+    if reference.tzinfo is None or reference.utcoffset() is None:
+        raise ValueError("Reference timestamp must be timezone-aware")
+    reference = reference.astimezone(timezone.utc)
+
+    candidates = (
+        (datetime.fromtimestamp(raw, timezone.utc), "unix"),
+        (
+            datetime.fromtimestamp(raw + MEDISANA_EPOCH_OFFSET, timezone.utc),
+            "medisana_2010",
+        ),
+    )
+    plausible = [
+        candidate
+        for candidate in candidates
+        if abs((candidate[0] - reference).total_seconds())
+        <= _TIMESTAMP_PLAUSIBILITY_SECONDS
+    ]
+    pool = plausible or list(candidates)
+    return min(pool, key=lambda candidate: abs((candidate[0] - reference).total_seconds()))
+
+
+def timestamp_to_utc(raw: int, *, reference: datetime | None = None) -> str:
+    """Return the corrected UTC timestamp as an ISO-8601 string."""
+    decoded, _epoch = decode_timestamp(raw, reference=reference)
+    return decoded.isoformat(timespec="seconds")
 
 
 def decode_weight_frame(payload: bytes) -> Measurement:
     if len(payload) < 19:
         raise ValueError(f"Weight frame is too short: {len(payload)} bytes")
     raw_timestamp = int.from_bytes(payload[5:9], "little")
+    timestamp, epoch = decode_timestamp(raw_timestamp)
     raw_impedance = int.from_bytes(payload[9:11], "little")
     return Measurement(
         timestamp_raw=raw_timestamp,
-        scale_timestamp_utc=timestamp_to_utc(raw_timestamp),
+        scale_timestamp_utc=timestamp.isoformat(timespec="seconds"),
+        timestamp_epoch=epoch,
         weight_kg=int.from_bytes(payload[1:3], "little") / 100.0,
         impedance_ohm=raw_impedance / 10.0,
         profile_id_candidate=payload[13],
@@ -53,7 +94,15 @@ def decode_feature_frame(
     if len(payload) < 19:
         raise ValueError(f"Feature frame is too short: {len(payload)} bytes")
     raw_timestamp = int.from_bytes(payload[1:5], "little")
-    result = measurement or Measurement(raw_timestamp, timestamp_to_utc(raw_timestamp))
+    if measurement is None:
+        timestamp, epoch = decode_timestamp(raw_timestamp)
+        result = Measurement(
+            raw_timestamp,
+            timestamp.isoformat(timespec="seconds"),
+            timestamp_epoch=epoch,
+        )
+    else:
+        result = measurement
     if result.timestamp_raw != raw_timestamp:
         raise ValueError("Feature frame timestamp does not match weight frame")
     result.body_fat_percent = _feature_value(payload, 8)
